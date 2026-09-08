@@ -1,5 +1,7 @@
+export type PostId = number | string
+
 export type Post = {
-  id: number
+  id: PostId
   title: string
   category: string
   goal: string

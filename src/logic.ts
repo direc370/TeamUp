@@ -1,4 +1,4 @@
-import type { Post, PublishForm } from './types'
+import type { Post, PostId, PublishForm } from './types'
 
 export function parseSkills(value: string): string[] {
   return value.split(/[,，、\s]+/).map((skill) => skill.trim()).filter(Boolean).slice(0, 5)
@@ -11,7 +11,7 @@ export function validatePublishForm(form: PublishForm): string {
   return ''
 }
 
-export function toggleId(ids: number[], id: number): number[] {
+export function toggleId(ids: PostId[], id: PostId): PostId[] {
   return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]
 }
 

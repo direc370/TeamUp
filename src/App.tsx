@@ -2,8 +2,9 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Gauge, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
 import { filterPosts, parseSkills, toggleId, validatePublishForm } from './logic'
 import { isSupabaseConfigured } from './lib/supabase'
+import { createCloudProject, fetchCloudProjects, fetchCloudUserState, setCloudApplication, setCloudSaved } from './lib/projects'
 import { AccountButton, AuthModal, useAuthSession } from './components/Auth'
-import type { Post, PublishForm } from './types'
+import type { Post, PostId, PublishForm } from './types'
 
 const demoPosts: Post[] = [
   { id: 1, title: '想组一支认真冲国赛的智能质检队', category: '科创', goal: '冲击国赛', time: '每周 8h+', location: '冶金学院 · 可线上', created: '12 分钟前', members: 3, needed: 2, skills: ['Python', '机器学习', '实验设计'], description: '我们已经完成选题和初步调研，正在寻找一位能做视觉算法、一位愿意长期协作的实验同学。目标明确，节奏稳定，拒绝临时拼盘。', match: 94, accent: 'lime' },
@@ -29,9 +30,9 @@ function loadPosts(): Post[] {
   }
 }
 
-function loadIds(key: string): number[] {
+function loadIds(key: string): PostId[] {
   try {
-    return JSON.parse(localStorage.getItem(key) ?? '[]') as number[]
+    return JSON.parse(localStorage.getItem(key) ?? '[]') as PostId[]
   } catch {
     return []
   }
@@ -43,14 +44,16 @@ function App() {
   const [goal, setGoal] = useState('全部目标')
   const [time, setTime] = useState('全部投入')
   const [query, setQuery] = useState('')
-  const [selectedId, setSelectedId] = useState<number>(demoPosts[0].id)
+  const [selectedId, setSelectedId] = useState<PostId>(demoPosts[0].id)
   const [showPublish, setShowPublish] = useState(false)
   const [form, setForm] = useState<PublishForm>(emptyForm)
   const [formError, setFormError] = useState('')
-  const [appliedIds, setAppliedIds] = useState<number[]>(() => loadIds('saiban:applied-posts'))
-  const [savedIds, setSavedIds] = useState<number[]>(() => loadIds('saiban:saved-posts'))
+  const [appliedIds, setAppliedIds] = useState<PostId[]>(() => loadIds('saiban:applied-posts'))
+  const [savedIds, setSavedIds] = useState<PostId[]>(() => loadIds('saiban:saved-posts'))
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
+  const [cloudError, setCloudError] = useState('')
+  const [cloudLoading, setCloudLoading] = useState(isSupabaseConfigured)
   const { session, loading: authLoading } = useAuthSession()
 
   const requireAccount = (action: () => void) => {
@@ -66,6 +69,28 @@ function App() {
   const filtered = useMemo(() => filterPosts(posts, category, goal, time, query), [posts, category, goal, time, query])
 
   useEffect(() => {
+    if (!isSupabaseConfigured) return
+    setCloudLoading(true)
+    fetchCloudProjects()
+      .then((projects) => {
+        setUserPosts(projects)
+        if (projects[0]) setSelectedId(projects[0].id)
+      })
+      .catch((error: Error) => setCloudError(`项目加载失败：${error.message}`))
+      .finally(() => setCloudLoading(false))
+  }, [])
+
+  useEffect(() => {
+    if (!session?.user || !isSupabaseConfigured) return
+    fetchCloudUserState(session.user.id)
+      .then(({ savedIds: saved, appliedIds: applied }) => {
+        setSavedIds(saved)
+        setAppliedIds(applied)
+      })
+      .catch((error: Error) => setCloudError(`账号数据加载失败：${error.message}`))
+  }, [session?.user])
+
+  useEffect(() => {
     if (!showPublish) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setShowPublish(false)
@@ -74,19 +99,37 @@ function App() {
     return () => window.removeEventListener('keydown', closeOnEscape)
   }, [showPublish])
 
-  const toggleSaved = (id: number) => {
+  const toggleSaved = async (id: PostId) => {
     const updatedIds = toggleId(savedIds, id)
-    localStorage.setItem('saiban:saved-posts', JSON.stringify(updatedIds))
+    if (isSupabaseConfigured && session?.user && typeof id === 'string') {
+      try {
+        await setCloudSaved(session.user.id, id, !savedIds.includes(id))
+      } catch (error) {
+        setCloudError(`收藏更新失败：${error instanceof Error ? error.message : '未知错误'}`)
+        return
+      }
+    } else {
+      localStorage.setItem('saiban:saved-posts', JSON.stringify(updatedIds))
+    }
     setSavedIds(updatedIds)
   }
 
-  const toggleApplied = (id: number) => {
+  const toggleApplied = async (id: PostId) => {
     const updatedIds = toggleId(appliedIds, id)
-    localStorage.setItem('saiban:applied-posts', JSON.stringify(updatedIds))
+    if (isSupabaseConfigured && session?.user && typeof id === 'string') {
+      try {
+        await setCloudApplication(session.user.id, id, !appliedIds.includes(id))
+      } catch (error) {
+        setCloudError(`申请更新失败：${error instanceof Error ? error.message : '未知错误'}`)
+        return
+      }
+    } else {
+      localStorage.setItem('saiban:applied-posts', JSON.stringify(updatedIds))
+    }
     setAppliedIds(updatedIds)
   }
 
-  const publishPost = (event: FormEvent<HTMLFormElement>) => {
+  const publishPost = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const error = validatePublishForm(form)
     if (error) {
@@ -95,24 +138,34 @@ function App() {
     }
     const skills = parseSkills(form.skills)
 
-    const newPost: Post = {
-      id: Date.now(),
-      title: form.title.trim(),
-      description: form.description.trim(),
-      category: form.category,
-      goal: form.goal,
-      time: form.time,
-      location: '我发布的项目 · 待完善地点',
-      created: '刚刚发布',
-      members: 1,
-      needed: 2,
-      skills,
-      match: 100,
-      accent: 'lime',
+    let newPost: Post
+    if (isSupabaseConfigured && session?.user) {
+      try {
+        newPost = await createCloudProject(session.user, form)
+      } catch (error) {
+        setFormError(`发布失败：${error instanceof Error ? error.message : '未知错误'}`)
+        return
+      }
+    } else {
+      newPost = {
+        id: Date.now(),
+        title: form.title.trim(),
+        description: form.description.trim(),
+        category: form.category,
+        goal: form.goal,
+        time: form.time,
+        location: '我发布的项目 · 待完善地点',
+        created: '刚刚发布',
+        members: 1,
+        needed: 2,
+        skills,
+        match: 100,
+        accent: 'lime',
+      }
     }
 
     const updatedPosts = [newPost, ...userPosts]
-    localStorage.setItem('saiban:user-posts', JSON.stringify(updatedPosts))
+    if (!isSupabaseConfigured) localStorage.setItem('saiban:user-posts', JSON.stringify(updatedPosts))
     setUserPosts(updatedPosts)
     setSelectedId(newPost.id)
     setCategory('全部类型')
@@ -150,7 +203,8 @@ function App() {
 
       <section className="teams-section" id="teams">
         <div className="section-heading reveal"><div><p className="eyebrow">01 / DISCOVER</p><h2>现在，<span>谁在找队友？</span></h2></div><div className="heading-side">每张组队帖都写清楚目标、缺口和投入。<br />先对齐，再一起出发。</div></div>
-        <div className="local-notice"><ShieldCheck size={16} /><span>{isSupabaseConfigured ? '云端配置已连接：账号与数据功能将在下一阶段启用。' : '本地演示模式：发布、收藏和申请仅保存在当前浏览器。配置 Supabase 后可启用云端账号。'}</span></div>
+        <div className="local-notice"><ShieldCheck size={16} /><span>{isSupabaseConfigured ? cloudLoading ? '正在连接云端项目…' : '云端模式：账号、项目、收藏和申请由 Supabase 安全保存。' : '本地演示模式：发布、收藏和申请仅保存在当前浏览器。配置 Supabase 后可启用云端账号。'}</span></div>
+        {cloudError && <p className="form-error cloud-error" role="alert">{cloudError}</p>}
         <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
         <div className="content-grid">
           <div className="post-list">{filtered.length ? filtered.map((post, index) => <PostCard key={post.id} post={post} index={index} active={selected?.id === post.id} onClick={() => setSelectedId(post.id)} />) : <div className="empty-state"><Search size={28} /><h3>没有找到匹配的队伍</h3><p>试试换一个技能或目标关键词。</p></div>}</div>
