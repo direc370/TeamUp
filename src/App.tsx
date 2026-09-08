@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Gauge, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
 import { filterPosts, parseSkills, toggleId, validatePublishForm } from './logic'
+import { isSupabaseConfigured } from './lib/supabase'
 import type { Post, PublishForm } from './types'
 
 const demoPosts: Post[] = [
@@ -138,7 +139,7 @@ function App() {
 
       <section className="teams-section" id="teams">
         <div className="section-heading reveal"><div><p className="eyebrow">01 / DISCOVER</p><h2>现在，<span>谁在找队友？</span></h2></div><div className="heading-side">每张组队帖都写清楚目标、缺口和投入。<br />先对齐，再一起出发。</div></div>
-        <div className="local-notice"><ShieldCheck size={16} /><span>体验版：你发布的组队帖、收藏和申请会保存在当前浏览器，接入账号系统后再同步云端。</span></div>
+        <div className="local-notice"><ShieldCheck size={16} /><span>{isSupabaseConfigured ? '云端配置已连接：账号与数据功能将在下一阶段启用。' : '本地演示模式：发布、收藏和申请仅保存在当前浏览器。配置 Supabase 后可启用云端账号。'}</span></div>
         <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
         <div className="content-grid">
           <div className="post-list">{filtered.length ? filtered.map((post, index) => <PostCard key={post.id} post={post} index={index} active={selected?.id === post.id} onClick={() => setSelectedId(post.id)} />) : <div className="empty-state"><Search size={28} /><h3>没有找到匹配的队伍</h3><p>试试换一个技能或目标关键词。</p></div>}</div>
