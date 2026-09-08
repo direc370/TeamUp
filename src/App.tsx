@@ -50,6 +50,7 @@ function App() {
   const [formError, setFormError] = useState('')
   const [appliedIds, setAppliedIds] = useState<PostId[]>(() => loadIds('saiban:applied-posts'))
   const [savedIds, setSavedIds] = useState<PostId[]>(() => loadIds('saiban:saved-posts'))
+  const [showSavedOnly, setShowSavedOnly] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [cloudError, setCloudError] = useState('')
@@ -66,7 +67,10 @@ function App() {
 
   const posts = useMemo(() => [...userPosts, ...demoPosts], [userPosts])
   const selected = posts.find((post) => post.id === selectedId) ?? null
-  const filtered = useMemo(() => filterPosts(posts, category, goal, time, query), [posts, category, goal, time, query])
+  const filtered = useMemo(() => {
+    const matched = filterPosts(posts, category, goal, time, query)
+    return showSavedOnly ? matched.filter((post) => savedIds.includes(post.id)) : matched
+  }, [posts, category, goal, time, query, showSavedOnly, savedIds])
 
   useEffect(() => {
     if (!isSupabaseConfigured) return
@@ -205,9 +209,9 @@ function App() {
         <div className="section-heading reveal"><div><p className="eyebrow">01 / DISCOVER</p><h2>现在，<span>谁在找队友？</span></h2></div><div className="heading-side">每张组队帖都写清楚目标、缺口和投入。<br />先对齐，再一起出发。</div></div>
         <div className="local-notice"><ShieldCheck size={16} /><span>{isSupabaseConfigured ? cloudLoading ? '正在连接云端项目…' : '云端模式：账号、项目、收藏和申请由 Supabase 安全保存。' : '本地演示模式：发布、收藏和申请仅保存在当前浏览器。配置 Supabase 后可启用云端账号。'}</span></div>
         {cloudError && <p className="form-error cloud-error" role="alert">{cloudError}</p>}
-        <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
+        <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><button className={`saved-filter ${showSavedOnly ? 'active' : ''}`} aria-pressed={showSavedOnly} onClick={() => requireAccount(() => setShowSavedOnly((visible) => !visible))}><Heart size={16} fill={showSavedOnly ? 'currentColor' : 'none'} />我的收藏{savedIds.length ? ` ${savedIds.length}` : ''}</button><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
         <div className="content-grid">
-          <div className="post-list">{filtered.length ? filtered.map((post, index) => <PostCard key={post.id} post={post} index={index} active={selected?.id === post.id} onClick={() => setSelectedId(post.id)} />) : <div className="empty-state"><Search size={28} /><h3>没有找到匹配的队伍</h3><p>试试换一个技能或目标关键词。</p></div>}</div>
+          <div className="post-list">{filtered.length ? filtered.map((post, index) => <PostCard key={post.id} post={post} index={index} active={selected?.id === post.id} onClick={() => setSelectedId(post.id)} />) : <div className="empty-state"><Search size={28} /><h3>{showSavedOnly ? '还没有收藏项目' : '没有找到匹配的队伍'}</h3><p>{showSavedOnly ? '点击项目详情右上角的爱心即可收藏。' : '试试换一个技能或目标关键词。'}</p></div>}</div>
           <aside className="detail-panel reveal" aria-live="polite">{selected ? <><div className={`detail-top ${selected.accent}`}><div className="detail-meta"><span>{selected.category}</span><span>{selected.created}</span></div><button className={`save-button ${savedIds.includes(selected.id) ? 'saved' : ''}`} aria-label={savedIds.includes(selected.id) ? '取消收藏' : '收藏项目'} aria-pressed={savedIds.includes(selected.id)} onClick={() => requireAccount(() => toggleSaved(selected.id))}><Heart size={20} fill={savedIds.includes(selected.id) ? 'currentColor' : 'none'} /></button><h3>{selected.title}</h3><div className="match-line"><Gauge size={16} />你的匹配度 <b>{selected.match}%</b><span className="match-bar"><i style={{ width: `${selected.match}%` }} /></span></div></div><div className="detail-body"><p>{selected.description}</p><div className="detail-facts"><Fact icon={<Users size={17} />} label="队伍规模" value={`${selected.members} 人在队 · 还缺 ${selected.needed} 人`} /><Fact icon={<Clock3 size={17} />} label="时间投入" value={selected.time} /><Fact icon={<CalendarDays size={17} />} label="项目节奏" value="本周开始 · 预计 8 周" /></div><div className="detail-skills"><span>正在寻找</span>{selected.skills.map((skill) => <b key={skill}>{skill}</b>)}</div><button className={`primary-button join-button ${appliedIds.includes(selected.id) ? 'joined' : ''}`} onClick={() => requireAccount(() => toggleApplied(selected.id))}>{appliedIds.includes(selected.id) ? <><Check size={18} />申请已发送</> : <>我对这个队伍感兴趣 <ArrowUpRight size={18} /></>}</button><p className="privacy-note"><ShieldCheck size={14} /> 联系方式仅在双方确认后开放</p></div></> : <div className="empty-detail">选择一张组队帖查看详情</div>}</aside>
         </div>
       </section>

@@ -209,11 +209,17 @@ with check (
   )
 );
 
-create policy "applicants withdraw pending applications"
+create policy "applicants manage their pending applications"
 on public.applications for update
 to authenticated
-using (applicant_id = (select auth.uid()) and status = 'pending')
-with check (applicant_id = (select auth.uid()) and status = 'withdrawn');
+using (
+  applicant_id = (select auth.uid())
+  and status in ('pending', 'withdrawn')
+)
+with check (
+  applicant_id = (select auth.uid())
+  and status in ('pending', 'withdrawn')
+);
 
 create policy "project owners review applications"
 on public.applications for update

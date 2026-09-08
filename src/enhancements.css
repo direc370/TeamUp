@@ -25,6 +25,25 @@
   background: var(--lime);
 }
 
+.saved-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid rgba(241, 240, 232, 0.18);
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.saved-filter:hover,
+.saved-filter.active {
+  border-color: var(--lime);
+  background: rgba(214, 244, 91, 0.1);
+  color: var(--lime);
+}
+
 .publish-modal {
   max-height: min(90vh, 760px);
   overflow-y: auto;
