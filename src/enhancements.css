@@ -68,6 +68,33 @@
   font-size: 12px;
 }
 
+.auth-modal {
+  max-width: 470px;
+}
+
+.auth-modal h2 {
+  margin-bottom: 8px;
+}
+
+.auth-switch {
+  border: 0;
+  background: transparent;
+  color: var(--lime);
+  font: inherit;
+  cursor: pointer;
+}
+
+.account-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 @media (max-width: 860px) {
   .topbar {
     position: relative;

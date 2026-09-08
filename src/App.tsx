@@ -2,6 +2,7 @@ import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Gauge, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
 import { filterPosts, parseSkills, toggleId, validatePublishForm } from './logic'
 import { isSupabaseConfigured } from './lib/supabase'
+import { AccountButton, AuthModal, useAuthSession } from './components/Auth'
 import type { Post, PublishForm } from './types'
 
 const demoPosts: Post[] = [
@@ -49,6 +50,16 @@ function App() {
   const [appliedIds, setAppliedIds] = useState<number[]>(() => loadIds('saiban:applied-posts'))
   const [savedIds, setSavedIds] = useState<number[]>(() => loadIds('saiban:saved-posts'))
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [showAuth, setShowAuth] = useState(false)
+  const { session, loading: authLoading } = useAuthSession()
+
+  const requireAccount = (action: () => void) => {
+    if (isSupabaseConfigured && !session) {
+      setShowAuth(true)
+      return
+    }
+    action()
+  }
 
   const posts = useMemo(() => [...userPosts, ...demoPosts], [userPosts])
   const selected = posts.find((post) => post.id === selectedId) ?? null
@@ -124,14 +135,14 @@ function App() {
       </nav>
       <div className="top-actions">
         <button className="icon-button mobile-menu" aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)}>{mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
-        <button className="ghost-button" title="登录功能将在接入 Supabase 后开放">登录</button>
-        <button className="primary-button small" onClick={() => setShowPublish(true)}><Plus size={17} />发布组队帖</button>
+        <AccountButton email={session?.user.email} loading={authLoading} onLogin={() => setShowAuth(true)} />
+        <button className="primary-button small" onClick={() => requireAccount(() => setShowPublish(true))}><Plus size={17} />发布组队帖</button>
       </div>
     </header>
 
     <main id="top">
       <section className="hero reveal">
-        <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" />TEAM UP / RECORD EVERYTHING</p><h1>找到一起<br /><em>认真做事</em>的人。</h1><p className="hero-sub">从组队、分工到交付，每一次靠谱的协作都值得被看见。</p><div className="hero-actions"><button className="primary-button" onClick={() => document.getElementById('teams')?.scrollIntoView({ behavior: 'smooth' })}>开始找队友 <ArrowUpRight size={18} /></button><button className="text-button" onClick={() => setShowPublish(true)}>我是队长，我要建队 <span>↗</span></button></div></div>
+        <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" />TEAM UP / RECORD EVERYTHING</p><h1>找到一起<br /><em>认真做事</em>的人。</h1><p className="hero-sub">从组队、分工到交付，每一次靠谱的协作都值得被看见。</p><div className="hero-actions"><button className="primary-button" onClick={() => document.getElementById('teams')?.scrollIntoView({ behavior: 'smooth' })}>开始找队友 <ArrowUpRight size={18} /></button><button className="text-button" onClick={() => requireAccount(() => setShowPublish(true))}>我是队长，我要建队 <span>↗</span></button></div></div>
         <div className="hero-signal"><div className="signal-label"><span className="live-dot" />本周协作信号</div><div className="signal-number">284<span>条</span></div><div className="signal-caption">正在寻找靠谱队友<br />的真实需求</div><div className="signal-stamp">09 / 2026<br />NENU · METALLURGY</div></div>
       </section>
 
@@ -143,12 +154,13 @@ function App() {
         <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
         <div className="content-grid">
           <div className="post-list">{filtered.length ? filtered.map((post, index) => <PostCard key={post.id} post={post} index={index} active={selected?.id === post.id} onClick={() => setSelectedId(post.id)} />) : <div className="empty-state"><Search size={28} /><h3>没有找到匹配的队伍</h3><p>试试换一个技能或目标关键词。</p></div>}</div>
-          <aside className="detail-panel reveal" aria-live="polite">{selected ? <><div className={`detail-top ${selected.accent}`}><div className="detail-meta"><span>{selected.category}</span><span>{selected.created}</span></div><button className={`save-button ${savedIds.includes(selected.id) ? 'saved' : ''}`} aria-label={savedIds.includes(selected.id) ? '取消收藏' : '收藏项目'} aria-pressed={savedIds.includes(selected.id)} onClick={() => toggleSaved(selected.id)}><Heart size={20} fill={savedIds.includes(selected.id) ? 'currentColor' : 'none'} /></button><h3>{selected.title}</h3><div className="match-line"><Gauge size={16} />你的匹配度 <b>{selected.match}%</b><span className="match-bar"><i style={{ width: `${selected.match}%` }} /></span></div></div><div className="detail-body"><p>{selected.description}</p><div className="detail-facts"><Fact icon={<Users size={17} />} label="队伍规模" value={`${selected.members} 人在队 · 还缺 ${selected.needed} 人`} /><Fact icon={<Clock3 size={17} />} label="时间投入" value={selected.time} /><Fact icon={<CalendarDays size={17} />} label="项目节奏" value="本周开始 · 预计 8 周" /></div><div className="detail-skills"><span>正在寻找</span>{selected.skills.map((skill) => <b key={skill}>{skill}</b>)}</div><button className={`primary-button join-button ${appliedIds.includes(selected.id) ? 'joined' : ''}`} onClick={() => toggleApplied(selected.id)}>{appliedIds.includes(selected.id) ? <><Check size={18} />申请已发送</> : <>我对这个队伍感兴趣 <ArrowUpRight size={18} /></>}</button><p className="privacy-note"><ShieldCheck size={14} /> 联系方式仅在双方确认后开放</p></div></> : <div className="empty-detail">选择一张组队帖查看详情</div>}</aside>
+          <aside className="detail-panel reveal" aria-live="polite">{selected ? <><div className={`detail-top ${selected.accent}`}><div className="detail-meta"><span>{selected.category}</span><span>{selected.created}</span></div><button className={`save-button ${savedIds.includes(selected.id) ? 'saved' : ''}`} aria-label={savedIds.includes(selected.id) ? '取消收藏' : '收藏项目'} aria-pressed={savedIds.includes(selected.id)} onClick={() => requireAccount(() => toggleSaved(selected.id))}><Heart size={20} fill={savedIds.includes(selected.id) ? 'currentColor' : 'none'} /></button><h3>{selected.title}</h3><div className="match-line"><Gauge size={16} />你的匹配度 <b>{selected.match}%</b><span className="match-bar"><i style={{ width: `${selected.match}%` }} /></span></div></div><div className="detail-body"><p>{selected.description}</p><div className="detail-facts"><Fact icon={<Users size={17} />} label="队伍规模" value={`${selected.members} 人在队 · 还缺 ${selected.needed} 人`} /><Fact icon={<Clock3 size={17} />} label="时间投入" value={selected.time} /><Fact icon={<CalendarDays size={17} />} label="项目节奏" value="本周开始 · 预计 8 周" /></div><div className="detail-skills"><span>正在寻找</span>{selected.skills.map((skill) => <b key={skill}>{skill}</b>)}</div><button className={`primary-button join-button ${appliedIds.includes(selected.id) ? 'joined' : ''}`} onClick={() => requireAccount(() => toggleApplied(selected.id))}>{appliedIds.includes(selected.id) ? <><Check size={18} />申请已发送</> : <>我对这个队伍感兴趣 <ArrowUpRight size={18} /></>}</button><p className="privacy-note"><ShieldCheck size={14} /> 联系方式仅在双方确认后开放</p></div></> : <div className="empty-detail">选择一张组队帖查看详情</div>}</aside>
         </div>
       </section>
-      <section className="bottom-callout reveal"><div><p className="eyebrow">02 / MAKE IT REAL</p><h2>你有一个想法，<br /><i>还差几个靠谱的人。</i></h2></div><button className="primary-button" onClick={() => setShowPublish(true)}>发布你的组队需求 <Plus size={18} /></button></section>
+      <section className="bottom-callout reveal"><div><p className="eyebrow">02 / MAKE IT REAL</p><h2>你有一个想法，<br /><i>还差几个靠谱的人。</i></h2></div><button className="primary-button" onClick={() => requireAccount(() => setShowPublish(true))}>发布你的组队需求 <Plus size={18} /></button></section>
     </main>
 
+    <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
     {showPublish && <div className="modal-backdrop" onMouseDown={() => setShowPublish(false)}><form className="publish-modal" onSubmit={publishPost} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close-button" onClick={() => setShowPublish(false)} aria-label="关闭"><X size={20} /></button><p className="eyebrow">NEW TEAM / 01</p><h2>把你的缺口<br /><em>说清楚。</em></h2><p className="modal-copy">目标越具体，越容易遇到同频的人。带 * 为必填项。</p><label>项目名称 *<input autoFocus value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="例如：想组一支认真冲国赛的队伍" maxLength={50} /></label><div className="form-grid"><label>竞赛类型<Select label="竞赛类型" value={form.category} onChange={(value) => setForm({ ...form, category: value })} options={['科创', '仿真', '创意']} /></label><label>目标层级<Select label="目标层级" value={form.goal} onChange={(value) => setForm({ ...form, goal: value })} options={['冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /></label></div><label>每周投入<Select label="每周投入" value={form.time} onChange={(value) => setForm({ ...form, time: value })} options={['每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></label><label>需要的技能 *<input value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} placeholder="用逗号分隔，例如：Python，建模，答辩" maxLength={80} /></label><label>你正在寻找 *<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="需要什么样的队友？目前做到哪一步？希望如何协作？" rows={4} maxLength={300} /></label>{formError && <p className="form-error" role="alert">{formError}</p>}<button type="submit" className="primary-button">发布组队帖 <ArrowUpRight size={18} /></button></form></div>}
     <footer><span>赛伴 / SAIBAN</span><span>协作即存证 · V0.3 本地交互版</span></footer>
   </div>
