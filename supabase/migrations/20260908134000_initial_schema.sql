@@ -109,18 +109,18 @@ begin
   if new.message <> old.message then
     raise exception 'application message cannot be changed';
   end if;
-  if old.status <> 'pending' then
-    raise exception 'reviewed applications cannot be changed';
-  end if;
 
   select owner_id into project_owner
   from public.projects
   where id = old.project_id;
 
-  if (select auth.uid()) = old.applicant_id and new.status = 'withdrawn' then
+  if old.status = 'pending' and (select auth.uid()) = old.applicant_id and new.status = 'withdrawn' then
     return new;
   end if;
-  if (select auth.uid()) = project_owner and new.status in ('approved', 'rejected') then
+  if old.status = 'withdrawn' and (select auth.uid()) = old.applicant_id and new.status = 'pending' then
+    return new;
+  end if;
+  if old.status = 'pending' and (select auth.uid()) = project_owner and new.status in ('approved', 'rejected') then
     return new;
   end if;
   raise exception 'invalid application status transition';

@@ -72,7 +72,10 @@ export async function setCloudSaved(userId: string, projectId: string, saved: bo
 export async function setCloudApplication(userId: string, projectId: string, applied: boolean) {
   if (!supabase) throw new Error('Supabase 未配置')
   const result = applied
-    ? await supabase.from('applications').insert({ applicant_id: userId, project_id: projectId })
+    ? await supabase.from('applications').upsert(
+        { applicant_id: userId, project_id: projectId, status: 'pending' },
+        { onConflict: 'project_id,applicant_id' },
+      )
     : await supabase.from('applications').update({ status: 'withdrawn' }).eq('applicant_id', userId).eq('project_id', projectId).eq('status', 'pending')
   if (result.error) throw new Error(result.error.message)
 }
