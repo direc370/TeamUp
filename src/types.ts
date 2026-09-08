@@ -16,6 +16,11 @@ export type Post = {
   accent: string
 }
 
+export type UserProjectState = {
+  savedIds: string[]
+  appliedIds: string[]
+}
+
 export type PublishForm = {
   title: string
   description: string

@@ -1,8 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Gauge, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
 import { filterPosts, parseSkills, toggleId, validatePublishForm } from './logic'
-import { isSupabaseConfigured } from './lib/supabase'
-import { createCloudProject, fetchCloudProjects, fetchCloudUserState, setCloudApplication, setCloudSaved } from './lib/projects'
+import { dataProvider, isRemoteProjectId, isRemoteProvider, projectRepository } from './lib/repository'
 import { AccountButton, AuthModal, useAuthSession } from './components/Auth'
 import type { Post, PostId, PublishForm } from './types'
 
@@ -54,11 +53,11 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [showAuth, setShowAuth] = useState(false)
   const [cloudError, setCloudError] = useState('')
-  const [cloudLoading, setCloudLoading] = useState(isSupabaseConfigured)
+  const [cloudLoading, setCloudLoading] = useState(isRemoteProvider)
   const { session, loading: authLoading } = useAuthSession()
 
   const requireAccount = (action: () => void) => {
-    if (isSupabaseConfigured && !session) {
+    if (isRemoteProvider && !session) {
       setShowAuth(true)
       return
     }
@@ -73,9 +72,9 @@ function App() {
   }, [posts, category, goal, time, query, showSavedOnly, savedIds])
 
   useEffect(() => {
-    if (!isSupabaseConfigured) return
+    if (!isRemoteProvider) return
     setCloudLoading(true)
-    fetchCloudProjects()
+    projectRepository.listProjects()
       .then((projects) => {
         setUserPosts(projects)
         if (projects[0]) setSelectedId(projects[0].id)
@@ -85,8 +84,8 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (!session?.user || !isSupabaseConfigured) return
-    fetchCloudUserState(session.user.id)
+    if (!session?.user || !isRemoteProvider) return
+    projectRepository.getUserState(session.user.id)
       .then(({ savedIds: saved, appliedIds: applied }) => {
         setSavedIds(saved)
         setAppliedIds(applied)
@@ -105,9 +104,9 @@ function App() {
 
   const toggleSaved = async (id: PostId) => {
     const updatedIds = toggleId(savedIds, id)
-    if (isSupabaseConfigured && session?.user && typeof id === 'string') {
+    if (isRemoteProvider && session?.user && isRemoteProjectId(id)) {
       try {
-        await setCloudSaved(session.user.id, id, !savedIds.includes(id))
+        await projectRepository.setSaved(session.user.id, id, !savedIds.includes(id))
       } catch (error) {
         setCloudError(`收藏更新失败：${error instanceof Error ? error.message : '未知错误'}`)
         return
@@ -120,9 +119,9 @@ function App() {
 
   const toggleApplied = async (id: PostId) => {
     const updatedIds = toggleId(appliedIds, id)
-    if (isSupabaseConfigured && session?.user && typeof id === 'string') {
+    if (isRemoteProvider && session?.user && isRemoteProjectId(id)) {
       try {
-        await setCloudApplication(session.user.id, id, !appliedIds.includes(id))
+        await projectRepository.setApplication(session.user.id, id, !appliedIds.includes(id))
       } catch (error) {
         setCloudError(`申请更新失败：${error instanceof Error ? error.message : '未知错误'}`)
         return
@@ -140,12 +139,10 @@ function App() {
       setFormError(error)
       return
     }
-    const skills = parseSkills(form.skills)
-
     let newPost: Post
-    if (isSupabaseConfigured && session?.user) {
+    if (isRemoteProvider && session?.user) {
       try {
-        newPost = await createCloudProject(session.user, form)
+        newPost = await projectRepository.createProject(session.user, form)
       } catch (error) {
         setFormError(`发布失败：${error instanceof Error ? error.message : '未知错误'}`)
         return
@@ -162,14 +159,14 @@ function App() {
         created: '刚刚发布',
         members: 1,
         needed: 2,
-        skills,
+        skills: parseSkills(form.skills),
         match: 100,
         accent: 'lime',
       }
     }
 
     const updatedPosts = [newPost, ...userPosts]
-    if (!isSupabaseConfigured) localStorage.setItem('saiban:user-posts', JSON.stringify(updatedPosts))
+    if (!isRemoteProvider) localStorage.setItem('saiban:user-posts', JSON.stringify(updatedPosts))
     setUserPosts(updatedPosts)
     setSelectedId(newPost.id)
     setCategory('全部类型')
@@ -207,7 +204,7 @@ function App() {
 
       <section className="teams-section" id="teams">
         <div className="section-heading reveal"><div><p className="eyebrow">01 / DISCOVER</p><h2>现在，<span>谁在找队友？</span></h2></div><div className="heading-side">每张组队帖都写清楚目标、缺口和投入。<br />先对齐，再一起出发。</div></div>
-        <div className="local-notice"><ShieldCheck size={16} /><span>{isSupabaseConfigured ? cloudLoading ? '正在连接云端项目…' : '云端模式：账号、项目、收藏和申请由 Supabase 安全保存。' : '本地演示模式：发布、收藏和申请仅保存在当前浏览器。配置 Supabase 后可启用云端账号。'}</span></div>
+        <div className="local-notice"><ShieldCheck size={16} /><span>{isRemoteProvider ? cloudLoading ? '正在连接云端项目…' : `云端模式：账号、项目、收藏和申请由 ${dataProvider === 'api' ? '后端 API' : 'Supabase'} 安全保存。` : '本地演示模式：发布、收藏和申请仅保存在当前浏览器。配置 Supabase 后可启用云端账号。'}</span></div>
         {cloudError && <p className="form-error cloud-error" role="alert">{cloudError}</p>}
         <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><button className={`saved-filter ${showSavedOnly ? 'active' : ''}`} aria-pressed={showSavedOnly} onClick={() => requireAccount(() => setShowSavedOnly((visible) => !visible))}><Heart size={16} fill={showSavedOnly ? 'currentColor' : 'none'} />我的收藏{savedIds.length ? ` ${savedIds.length}` : ''}</button><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
         <div className="content-grid">

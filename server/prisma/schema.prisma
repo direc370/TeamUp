@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ProjectStatus {
+  draft
+  open
+  closed
+
+  @@map("project_status")
+}
+
+enum ApplicationStatus {
+  pending
+  approved
+  rejected
+  withdrawn
+
+  @@map("application_status")
+}
+
+model Profile {
+  id           String   @id @db.Uuid
+  displayName  String   @default("") @map("display_name") @db.Text
+  school       String   @default("") @db.Text
+  major        String   @default("") @db.Text
+  bio          String   @default("") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  projects     Project[]
+  applications Application[]
+  savedProjects SavedProject[]
+
+  @@map("profiles")
+}
+
+model Project {
+  id               String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId          String        @map("owner_id") @db.Uuid
+  title            String        @db.Text
+  description      String        @db.Text
+  category         String        @db.Text
+  goal             String        @db.Text
+  weeklyCommitment String        @map("weekly_commitment") @db.Text
+  location         String        @default("待完善地点") @db.Text
+  neededMembers    Int           @default(1) @map("needed_members") @db.SmallInt
+  skills           String[]
+  status           ProjectStatus @default(open)
+  createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+  owner             Profile      @relation(fields: [ownerId], references: [id])
+  applications     Application[]
+  savedBy          SavedProject[]
+
+  @@map("projects")
+}
+
+model Application {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String            @map("project_id") @db.Uuid
+  applicantId String            @map("applicant_id") @db.Uuid
+  message     String            @default("") @db.Text
+  status      ApplicationStatus @default(pending)
+  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  applicant   Profile           @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, applicantId])
+  @@map("applications")
+}
+
+model SavedProject {
+  userId    String   @map("user_id") @db.Uuid
+  projectId String   @map("project_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  user      Profile  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([userId, projectId])
+  @@map("saved_projects")
+}

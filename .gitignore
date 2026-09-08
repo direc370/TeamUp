@@ -1,5 +1,8 @@
 node_modules/
 dist/
+server/node_modules/
+server/dist/
+server/coverage/
 .vite/
 *.tsbuildinfo
 vite.config.js
