@@ -9,4 +9,14 @@ describe('ProjectsService', () => {
     expect(repository.create).toHaveBeenCalledWith(expect.objectContaining({ ownerId: 'authenticated-user' }))
     expect(repository.create.mock.calls[0][0]).not.toHaveProperty('userId')
   })
+
+  it('列表返回 membership 真实人数', async () => {
+    const repository = {
+      list: jest.fn().mockResolvedValue([{ id: 'p1', title: 'A', _count: { memberships: 2 } }]),
+      create: jest.fn(),
+      status: (v: string) => v,
+    }
+    const service = new ProjectsService(repository as never)
+    await expect(service.list()).resolves.toEqual([{ id: 'p1', title: 'A', members: 2, memberCount: 2 }])
+  })
 })

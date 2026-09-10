@@ -5,7 +5,15 @@ import { ProjectsRepository } from './projects.repository'
 @Injectable()
 export class ProjectsService {
   constructor(private readonly repository: ProjectsRepository) {}
-  list() { return this.repository.list() }
+
+  async list() {
+    const rows = await this.repository.list()
+    return rows.map((row) => {
+      const { _count, ...project } = row
+      return { ...project, members: _count.memberships, memberCount: _count.memberships }
+    })
+  }
+
   create(ownerId: string, dto: CreateProjectDto) {
     return this.repository.create({
       ownerId,

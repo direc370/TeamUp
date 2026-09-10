@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:run": "vitest run",
-    "api:install": "npm --prefix server install",
+    "api:install": "npm --prefix server ci",
+    "api:dev": "npm --prefix server run start:dev",
+    "api:start": "npm --prefix server start",
     "api:test": "npm --prefix server test",
     "api:build": "npm --prefix server run build"
   },

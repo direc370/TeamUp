@@ -1,8 +1,12 @@
+# 本地计划书、排版中间产物与验收记录，不公开上传。
+output/
+
 node_modules/
 dist/
 server/node_modules/
 server/dist/
 server/coverage/
+server/.npm-cache/
 .vite/
 *.tsbuildinfo
 vite.config.js
@@ -11,6 +15,8 @@ vite.config.d.ts
 .env
 .env.*
 !.env.example
+server/.env
+.openviking/
 
 .workbuddy/memory/
 *.log

@@ -1,0 +1,26 @@
+# 本地 Postgres 16 示例，仅供本机开发。
+# 不等于已上线：不创建付费云资源、不视为国内生产部署。
+# 绑定 127.0.0.1:5432，切勿改成 0.0.0.0 把数据库暴露到局域网/公网。
+# 本文件只是配置样例，不要在未明确授权时执行 docker compose up。
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: saiban-postgres-local
+    restart: "no"
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_USER: saiban
+      POSTGRES_PASSWORD: saiban_dev_only
+      POSTGRES_DB: saiban
+    volumes:
+      - saiban_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U saiban -d saiban"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  saiban_pg_data:

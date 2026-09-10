@@ -24,19 +24,66 @@ enum ApplicationStatus {
   @@map("application_status")
 }
 
+enum MembershipRole {
+  owner
+  member
+
+  @@map("membership_role")
+}
+
+enum TaskStatus {
+  todo
+  claimed
+  submitted
+  accepted
+  cancelled
+
+  @@map("task_status")
+}
+
 model Profile {
-  id           String   @id @db.Uuid
-  displayName  String   @default("") @map("display_name") @db.Text
-  school       String   @default("") @db.Text
-  major        String   @default("") @db.Text
-  bio          String   @default("") @db.Text
-  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-  projects     Project[]
-  applications Application[]
+  id            String          @id @db.Uuid
+  displayName   String          @default("") @map("display_name") @db.Text
+  school        String          @default("") @db.Text
+  major         String          @default("") @db.Text
+  bio           String          @default("") @db.Text
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  projects      Project[]
+  applications  Application[]
   savedProjects SavedProject[]
+  credential    AuthCredential?
+  sessions      AuthSession[]
+  memberships   Membership[]
+  assignedTasks Task[]
+  taskEvents    TaskEvent[]
 
   @@map("profiles")
+}
+
+model AuthCredential {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email        String   @unique @db.Citext
+  passwordHash String   @map("password_hash") @db.Text
+  profileId    String   @unique @map("profile_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  profile      Profile  @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@map("auth_credentials")
+}
+
+model AuthSession {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  refreshHash String    @map("refresh_hash") @db.Text
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user        Profile   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([refreshHash])
+  @@index([userId])
+  @@map("auth_sessions")
 }
 
 model Project {
@@ -53,9 +100,11 @@ model Project {
   status           ProjectStatus @default(open)
   createdAt        DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt        DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
-  owner             Profile      @relation(fields: [ownerId], references: [id])
+  owner            Profile       @relation(fields: [ownerId], references: [id])
   applications     Application[]
   savedBy          SavedProject[]
+  memberships      Membership[]
+  tasks            Task[]
 
   @@map("projects")
 }
@@ -84,4 +133,46 @@ model SavedProject {
 
   @@id([userId, projectId])
   @@map("saved_projects")
+}
+
+model Membership {
+  projectId String         @map("project_id") @db.Uuid
+  userId    String         @map("user_id") @db.Uuid
+  role      MembershipRole
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      Profile        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@unique([projectId, userId])
+  @@map("memberships")
+}
+
+model Task {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String     @map("project_id") @db.Uuid
+  title      String     @db.Text
+  status     TaskStatus @default(todo)
+  assigneeId String?    @map("assignee_id") @db.Uuid
+  dueAt      DateTime?  @map("due_at") @db.Timestamptz(6)
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt  DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project    Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee   Profile?   @relation(fields: [assigneeId], references: [id])
+  events     TaskEvent[]
+
+  @@map("tasks")
+}
+
+model TaskEvent {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId    String   @map("task_id") @db.Uuid
+  actorId   String   @map("actor_id") @db.Uuid
+  type      String   @db.Text
+  payload   Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor     Profile  @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@map("task_events")
 }

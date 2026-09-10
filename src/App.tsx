@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Gauge, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
 import { filterPosts, parseSkills, toggleId, validatePublishForm } from './logic'
-import { dataProvider, isRemoteProjectId, isRemoteProvider, projectRepository } from './lib/repository'
+import { dataProvider, isRemoteProjectId, isRemoteProvider, projectRepository, type ProjectApplication, type ProjectTask } from './lib/repository'
 import { AccountButton, AuthModal, useAuthSession } from './components/Auth'
 import type { Post, PostId, PublishForm } from './types'
 
@@ -54,7 +54,13 @@ function App() {
   const [showAuth, setShowAuth] = useState(false)
   const [cloudError, setCloudError] = useState('')
   const [cloudLoading, setCloudLoading] = useState(isRemoteProvider)
+  const [ownedApplications, setOwnedApplications] = useState<ProjectApplication[]>([])
+  const [applicationsError, setApplicationsError] = useState('')
+  const [applicationsLoading, setApplicationsLoading] = useState(false)
+  const [workspaceTasks, setWorkspaceTasks] = useState<ProjectTask[]>([])
+  const [tasksError, setTasksError] = useState('')
   const { session, loading: authLoading } = useAuthSession()
+  const showOwnerApplications = isRemoteProvider && dataProvider !== 'local'
 
   const requireAccount = (action: () => void) => {
     if (isRemoteProvider && !session) {
@@ -94,6 +100,38 @@ function App() {
   }, [session?.user])
 
   useEffect(() => {
+    if (!showOwnerApplications || !session?.user) {
+      setOwnedApplications([])
+      setApplicationsError('')
+      return
+    }
+    setApplicationsLoading(true)
+    projectRepository.listMyProjectApplications()
+      .then((rows) => {
+        setOwnedApplications(rows)
+        setApplicationsError('')
+      })
+      .catch((error: Error) => {
+        setOwnedApplications([])
+        setApplicationsError(`申请列表加载失败：${error.message}`)
+      })
+      .finally(() => setApplicationsLoading(false))
+  }, [session?.user, showOwnerApplications])
+
+  useEffect(() => {
+    if (!isRemoteProvider || dataProvider === 'local') return
+    projectRepository.listTasks()
+      .then((tasks) => {
+        setWorkspaceTasks(tasks)
+        setTasksError('')
+      })
+      .catch((error: Error) => {
+        setWorkspaceTasks([])
+        setTasksError(`任务加载失败：${error.message}`)
+      })
+  }, [])
+
+  useEffect(() => {
     if (!showPublish) return
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setShowPublish(false)
@@ -130,6 +168,16 @@ function App() {
       localStorage.setItem('saiban:applied-posts', JSON.stringify(updatedIds))
     }
     setAppliedIds(updatedIds)
+  }
+
+  const reviewOwnedApplication = async (application: ProjectApplication, approve: boolean) => {
+    try {
+      await projectRepository.reviewApplication(application.projectId, application.id, approve)
+      setOwnedApplications((current) => current.map((item) => item.id === application.id ? { ...item, status: approve ? 'approved' : 'rejected' } : item))
+      setApplicationsError('')
+    } catch (error) {
+      setApplicationsError(`${approve ? '通过' : '拒绝'}失败：${error instanceof Error ? error.message : '未知错误'}`)
+    }
   }
 
   const publishPost = async (event: FormEvent<HTMLFormElement>) => {
@@ -212,7 +260,47 @@ function App() {
           <aside className="detail-panel reveal" aria-live="polite">{selected ? <><div className={`detail-top ${selected.accent}`}><div className="detail-meta"><span>{selected.category}</span><span>{selected.created}</span></div><button className={`save-button ${savedIds.includes(selected.id) ? 'saved' : ''}`} aria-label={savedIds.includes(selected.id) ? '取消收藏' : '收藏项目'} aria-pressed={savedIds.includes(selected.id)} onClick={() => requireAccount(() => toggleSaved(selected.id))}><Heart size={20} fill={savedIds.includes(selected.id) ? 'currentColor' : 'none'} /></button><h3>{selected.title}</h3><div className="match-line"><Gauge size={16} />你的匹配度 <b>{selected.match}%</b><span className="match-bar"><i style={{ width: `${selected.match}%` }} /></span></div></div><div className="detail-body"><p>{selected.description}</p><div className="detail-facts"><Fact icon={<Users size={17} />} label="队伍规模" value={`${selected.members} 人在队 · 还缺 ${selected.needed} 人`} /><Fact icon={<Clock3 size={17} />} label="时间投入" value={selected.time} /><Fact icon={<CalendarDays size={17} />} label="项目节奏" value="本周开始 · 预计 8 周" /></div><div className="detail-skills"><span>正在寻找</span>{selected.skills.map((skill) => <b key={skill}>{skill}</b>)}</div><button className={`primary-button join-button ${appliedIds.includes(selected.id) ? 'joined' : ''}`} onClick={() => requireAccount(() => toggleApplied(selected.id))}>{appliedIds.includes(selected.id) ? <><Check size={18} />申请已发送</> : <>我对这个队伍感兴趣 <ArrowUpRight size={18} /></>}</button><p className="privacy-note"><ShieldCheck size={14} /> 联系方式仅在双方确认后开放</p></div></> : <div className="empty-detail">选择一张组队帖查看详情</div>}</aside>
         </div>
       </section>
-      <section className="bottom-callout reveal"><div><p className="eyebrow">02 / MAKE IT REAL</p><h2>你有一个想法，<br /><i>还差几个靠谱的人。</i></h2></div><button className="primary-button" onClick={() => requireAccount(() => setShowPublish(true))}>发布你的组队需求 <Plus size={18} /></button></section>
+      {showOwnerApplications && session?.user && <section className="teams-section reveal" id="applications">
+        <div className="section-heading"><div><p className="eyebrow">02 / APPLICATIONS</p><h2>我发布的申请</h2></div><div className="heading-side">仅展示你作为队长收到的申请。审核失败会显示错误，不会伪装成功。</div></div>
+        {applicationsLoading && <p className="privacy-note">正在加载申请…</p>}
+        {applicationsError && <p className="form-error cloud-error" role="alert">{applicationsError}</p>}
+        {!applicationsLoading && !applicationsError && !ownedApplications.length && <p className="privacy-note">暂时没有待处理申请。</p>}
+        <ul className="application-list">
+          {ownedApplications.map((application) => (
+            <li key={application.id} className="application-row">
+              <div>
+                <strong>{application.projectTitle ?? application.projectId}</strong>
+                <p>{application.applicantEmail ?? application.applicantId ?? '申请人'} · {application.status}{application.message ? ` · ${application.message}` : ''}</p>
+              </div>
+              {application.status === 'pending' && <div className="application-actions">
+                <button type="button" className="primary-button small" onClick={() => void reviewOwnedApplication(application, true)}>通过</button>
+                <button type="button" className="ghost-button" onClick={() => void reviewOwnedApplication(application, false)}>拒绝</button>
+              </div>}
+            </li>
+          ))}
+        </ul>
+      </section>}
+
+      <section className="teams-section reveal" id="workspace">
+        <div className="section-heading"><div><p className="eyebrow">03 / WORKSPACE</p><h2>协作工作台</h2></div><div className="heading-side">任务状态来自接口返回；此处只读展示，不构成法律存证。</div></div>
+        {dataProvider === 'local' ? <p className="privacy-note">本地演示模式没有云端任务。</p> : <>
+          {tasksError && <p className="form-error cloud-error" role="alert">{tasksError}</p>}
+          {!tasksError && !workspaceTasks.length && <p className="privacy-note">当前没有可展示的任务记录。</p>}
+          <ul className="application-list">
+            {workspaceTasks.map((task) => (
+              <li key={task.id} className="application-row">
+                <div>
+                  <strong>{task.title}</strong>
+                  <p>{task.status ?? '未知状态'}{task.description ? ` · ${task.description}` : ''}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>}
+      </section>
+
+      <section className="bottom-callout reveal" id="ledger"><div><p className="eyebrow">04 / CONTRIBUTION</p><h2>我的贡献账本</h2></div><p className="heading-side">这里记录协作进度的只读说明，不是法律意义上的存证。</p></section>
+      <section className="bottom-callout reveal"><div><p className="eyebrow">05 / MAKE IT REAL</p><h2>你有一个想法，<br /><i>还差几个靠谱的人。</i></h2></div><button className="primary-button" onClick={() => requireAccount(() => setShowPublish(true))}>发布你的组队需求 <Plus size={18} /></button></section>
     </main>
 
     <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
