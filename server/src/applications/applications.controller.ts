@@ -16,7 +16,7 @@ export class ApplicationsController {
 
   @Put(':projectId')
   apply(@Req() req: AuthenticatedRequest, @Param('projectId') projectId: string, @Body() dto: CreateApplicationDto) {
-    return this.service.apply(req.user.id, projectId, dto.message)
+    return this.service.apply(req.user.id, projectId, dto)
   }
 
   @Delete(':projectId')

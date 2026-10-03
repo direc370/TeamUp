@@ -3,7 +3,7 @@ import { AuthService } from './auth.service'
 import { hashRefreshToken } from './auth.repository'
 import { TokenService } from './token.service'
 import { JwtAuthenticator } from './jwt-authenticator'
-import { hashPassword } from './password.hasher'
+import * as passwordHasher from './password.hasher'
 import { signHs256 } from './hs256'
 
 const SECRET = '8b6d24c9a13e507f92d4b68c1f0a735e'
@@ -42,7 +42,7 @@ describe('AuthService', () => {
   })
 
   it('登录错误密码拒绝，正确密码发 token', async () => {
-    const passwordHash = await hashPassword('password1')
+    const passwordHash = await passwordHasher.hashPassword('password1')
     const r = repo({
       findCredentialByEmail: jest.fn().mockResolvedValue({ profileId: 'user-1', passwordHash, email: 'a@b.com' }),
     })
@@ -53,9 +53,11 @@ describe('AuthService', () => {
   })
 
   it('同 IP+email 每分钟超过 5 次限流', async () => {
+    const hashPassword = jest.spyOn(passwordHasher, 'hashPassword').mockResolvedValue('test-password-hash')
     const service = new AuthService(repo() as never, tokens)
     for (let i = 0; i < 5; i++) await service.register('same@b.com', 'password1', '1.1.1.1')
     await expect(service.register('same@b.com', 'password1', '1.1.1.1')).rejects.toBeInstanceOf(HttpException)
+    hashPassword.mockRestore()
   })
 
   it('refresh 拒绝伪造、过期、撤销；成功则轮换', async () => {

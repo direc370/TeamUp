@@ -18,16 +18,37 @@ export class ApplicationsRepository {
     return this.prisma.application.findMany({
       where: { projectId: { in: projectIds }, status: 'pending' },
       orderBy: { createdAt: 'asc' },
-      include: { project: { select: { title: true } } },
+      include: {
+        project: { select: { title: true } },
+        applicant: { select: { displayName: true, school: true, major: true } },
+      },
     })
   }
 
-  create(projectId: string, applicantId: string, message: string) {
-    return this.prisma.application.create({ data: { projectId, applicantId, message, status: 'pending' } })
+  create(projectId: string, applicantId: string, form: {
+    roleTags: string[]
+    experience: string
+    availability: string
+    fitReason: string
+    links: string[]
+    note: string
+  }) {
+    return this.prisma.application.create({ data: { projectId, applicantId, ...form, status: 'pending' } })
   }
 
   setStatus(id: string, status: ApplicationStatus) {
     return this.prisma.application.update({ where: { id }, data: { status } })
+  }
+
+  reopen(id: string, form: {
+    roleTags: string[]
+    experience: string
+    availability: string
+    fitReason: string
+    links: string[]
+    note: string
+  }) {
+    return this.prisma.application.update({ where: { id }, data: { ...form, status: 'pending' } })
   }
 
   approveWithMembership(params: {

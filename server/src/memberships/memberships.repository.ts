@@ -21,4 +21,12 @@ export class MembershipsRepository {
   listByOwner(ownerId: string) {
     return this.prisma.membership.findMany({ where: { userId: ownerId, role: 'owner' }, select: { projectId: true } })
   }
+
+  listByProject(projectId: string) {
+    return this.prisma.membership.findMany({
+      where: { projectId },
+      orderBy: { createdAt: 'asc' },
+      select: { userId: true, role: true, createdAt: true, user: { select: { id: true, displayName: true, school: true, major: true } } },
+    })
+  }
 }

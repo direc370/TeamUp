@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react'
-import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Gauge, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
-import { filterPosts, parseSkills, toggleId, validatePublishForm } from './logic'
-import { dataProvider, isRemoteProjectId, isRemoteProvider, projectRepository, type ProjectApplication, type ProjectTask } from './lib/repository'
+import { ArrowUpRight, CalendarDays, Check, ChevronDown, Clock3, Filter, Heart, Menu, Plus, Search, ShieldCheck, Users, X } from 'lucide-react'
+import { filterPosts, formatMember, parseSkills, statusLabel, statusTone, toggleId, validatePublishForm } from './logic'
+import { dataProvider, isRemoteProjectId, isRemoteProvider, projectRepository, type ApplicationForm, type ProjectApplication, type ProjectMember, type ProjectTask } from './lib/repository'
 import { AccountButton, AuthModal, useAuthSession } from './components/Auth'
 import type { Post, PostId, PublishForm } from './types'
 
@@ -37,6 +37,15 @@ function loadIds(key: string): PostId[] {
   }
 }
 
+const emptyApplicationForm: ApplicationForm = {
+  roleTags: [],
+  experience: '',
+  availability: '每周 5–8 小时',
+  fitReason: '',
+  links: [],
+  note: '',
+}
+
 function App() {
   const [userPosts, setUserPosts] = useState<Post[]>(loadPosts)
   const [category, setCategory] = useState('全部类型')
@@ -45,6 +54,9 @@ function App() {
   const [query, setQuery] = useState('')
   const [selectedId, setSelectedId] = useState<PostId>(demoPosts[0].id)
   const [showPublish, setShowPublish] = useState(false)
+  const [showApplication, setShowApplication] = useState(false)
+  const [applicationForm, setApplicationForm] = useState<ApplicationForm>(emptyApplicationForm)
+  const [applicationError, setApplicationError] = useState('')
   const [form, setForm] = useState<PublishForm>(emptyForm)
   const [formError, setFormError] = useState('')
   const [appliedIds, setAppliedIds] = useState<PostId[]>(() => loadIds('saiban:applied-posts'))
@@ -58,6 +70,13 @@ function App() {
   const [applicationsError, setApplicationsError] = useState('')
   const [applicationsLoading, setApplicationsLoading] = useState(false)
   const [workspaceTasks, setWorkspaceTasks] = useState<ProjectTask[]>([])
+  const [workspaceMembers, setWorkspaceMembers] = useState<{ userId: string; role: string; user: { displayName: string; school: string; major: string } }[]>([])
+  const [myProjects, setMyProjects] = useState<Post[]>([])
+  const [myProjectsLoading, setMyProjectsLoading] = useState(false)
+  const [myTeamMembers, setMyTeamMembers] = useState<Record<string, ProjectMember[]>>({})
+  const [myTeamError, setMyTeamError] = useState('')
+  const [newTaskTitle, setNewTaskTitle] = useState('')
+  const [taskActionLoading, setTaskActionLoading] = useState('')
   const [tasksError, setTasksError] = useState('')
   const { session, loading: authLoading } = useAuthSession()
   const showOwnerApplications = isRemoteProvider && dataProvider !== 'local'
@@ -131,6 +150,116 @@ function App() {
       })
   }, [])
 
+  // 登录后加载「我的队伍」（含已满员/已关闭的项目），供工作台绑定
+  useEffect(() => {
+    if (!isRemoteProvider || dataProvider === 'local') return
+    if (!session?.user) {
+      setMyProjects([])
+      setWorkspaceMembers([])
+      return
+    }
+    let cancelled = false
+    setMyProjectsLoading(true)
+    projectRepository.listMyProjects(session.user.id)
+      .then((projects) => {
+        if (cancelled) return
+        setMyProjects(projects)
+      })
+      .catch(() => { if (!cancelled) setMyProjects([]) })
+      .finally(() => { if (!cancelled) setMyProjectsLoading(false) })
+    return () => { cancelled = true }
+  }, [session?.user])
+
+  // 「我的队伍」：为每个项目并行拉取成员名单
+  useEffect(() => {
+    if (!isRemoteProvider || dataProvider === 'local' || !myProjects.length) {
+      setMyTeamMembers({})
+      setMyTeamError('')
+      return
+    }
+    let cancelled = false
+    setMyTeamError('')
+    Promise.all(myProjects.map(async (project) => {
+      const id = project.id as string
+      try {
+        const members = await projectRepository.listMembers(id)
+        return { id, members }
+      } catch (error) {
+        return { id, members: [], error: error instanceof Error ? error.message : '未知错误' }
+      }
+    })).then((rows) => {
+      if (cancelled) return
+      const mapped: Record<string, ProjectMember[]> = {}
+      const failures: string[] = []
+      rows.forEach((row) => {
+        mapped[row.id] = row.members
+        if ('error' in row && row.error) failures.push(row.error)
+      })
+      setMyTeamMembers(mapped)
+      if (failures.length) setMyTeamError(`部分队伍成员加载失败：${failures[0]}`)
+    })
+    return () => { cancelled = true }
+  }, [session?.user, myProjects, isRemoteProvider])
+
+  // 工作台绑定项目：优先「我的队伍」里第一个（含 closed），否则退回发现流选中
+  useEffect(() => {
+    if (!isRemoteProvider) return
+    const myProjectId = myProjects[0] ? myProjects[0].id as string : undefined
+    const remoteProjects = posts.filter((post) => isRemoteProjectId(post.id))
+    const currentIsRemote = selected && isRemoteProjectId(selected.id)
+    if (!currentIsRemote && remoteProjects.length > 0) {
+      setSelectedId(remoteProjects[0].id)
+    }
+    const projectId = myProjectId ?? ((selected && isRemoteProjectId(selected.id)) ? selected.id : (remoteProjects[0]?.id as string | undefined))
+    if (!projectId) {
+      setWorkspaceMembers([])
+      return
+    }
+    projectRepository.listMembers(projectId).then(setWorkspaceMembers).catch(() => setWorkspaceMembers([]))
+  }, [selected?.id, session?.user, posts, myProjects])
+
+  // 登录状态恢复后重新拉取成员，避免刷新时序导致空列表
+  useEffect(() => {
+    if (!isRemoteProvider || dataProvider === 'local') return
+    const myProjectId = myProjects[0] ? myProjects[0].id as string : undefined
+    const projectId = myProjectId ?? ((selected && isRemoteProjectId(selected.id)) ? selected.id : undefined)
+    if (projectId && session?.user) {
+      projectRepository.listMembers(projectId).then(setWorkspaceMembers).catch(() => setWorkspaceMembers([]))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user])
+
+  const createWorkspaceTask = async () => {
+    const myProjectId = myProjects[0] ? myProjects[0].id as string : undefined
+    const projectId = myProjectId ?? ((selected && isRemoteProjectId(selected.id)) ? selected.id : undefined)
+    if (!projectId || !newTaskTitle.trim()) return
+    setTaskActionLoading('create')
+    try {
+      const task = await projectRepository.createTask(projectId, newTaskTitle)
+      setWorkspaceTasks((current) => [...current, task])
+      setNewTaskTitle('')
+    } catch (error) {
+      setTasksError(`任务创建失败：${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setTaskActionLoading('')
+    }
+  }
+
+  const updateWorkspaceTask = async (task: ProjectTask, action: 'claim' | 'submit' | 'accept') => {
+    setTaskActionLoading(task.id)
+    try {
+      if (action === 'claim') await projectRepository.claimTask(task.id)
+      if (action === 'submit') await projectRepository.submitTask(task.id)
+      if (action === 'accept') await projectRepository.acceptTask(task.id)
+      const tasks = await projectRepository.listTasks()
+      setWorkspaceTasks(tasks)
+    } catch (error) {
+      setTasksError(`任务操作失败：${error instanceof Error ? error.message : '未知错误'}`)
+    } finally {
+      setTaskActionLoading('')
+    }
+  }
+
   useEffect(() => {
     if (!showPublish) return
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -155,19 +284,42 @@ function App() {
     setSavedIds(updatedIds)
   }
 
-  const toggleApplied = async (id: PostId) => {
-    const updatedIds = toggleId(appliedIds, id)
-    if (isRemoteProvider && session?.user && isRemoteProjectId(id)) {
-      try {
-        await projectRepository.setApplication(session.user.id, id, !appliedIds.includes(id))
-      } catch (error) {
-        setCloudError(`申请更新失败：${error instanceof Error ? error.message : '未知错误'}`)
-        return
-      }
-    } else {
-      localStorage.setItem('saiban:applied-posts', JSON.stringify(updatedIds))
+  const submitApplication = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!selected) return
+    if (!applicationForm.roleTags.length || applicationForm.experience.trim().length < 60 || applicationForm.fitReason.trim().length < 40) {
+      setApplicationError('请补全想加入的方向、相关经历和适配理由。')
+      return
     }
-    setAppliedIds(updatedIds)
+    try {
+      if (isRemoteProvider && session?.user && isRemoteProjectId(selected.id)) {
+        await projectRepository.setApplication(session.user.id, selected.id, {
+          ...applicationForm,
+          experience: applicationForm.experience.trim(),
+          fitReason: applicationForm.fitReason.trim(),
+          links: applicationForm.links.map((link) => link.trim()).filter(Boolean),
+          note: applicationForm.note.trim(),
+        })
+      } else {
+        localStorage.setItem('saiban:applied-posts', JSON.stringify(toggleId(appliedIds, selected.id)))
+      }
+      setAppliedIds((current) => current.includes(selected.id) ? current : [...current, selected.id])
+      setShowApplication(false)
+      setApplicationForm(emptyApplicationForm)
+      setApplicationError('')
+    } catch (error) {
+      setApplicationError(`申请提交失败：${error instanceof Error ? error.message : '未知错误'}`)
+    }
+  }
+
+  const withdrawApplication = async (id: PostId) => {
+    try {
+      if (isRemoteProvider && session?.user && isRemoteProjectId(id)) await projectRepository.setApplication(session.user.id, id, null)
+      else localStorage.setItem('saiban:applied-posts', JSON.stringify(appliedIds.filter((item) => item !== id)))
+      setAppliedIds((current) => current.filter((item) => item !== id))
+    } catch (error) {
+      setCloudError(`撤回申请失败：${error instanceof Error ? error.message : '未知错误'}`)
+    }
   }
 
   const reviewOwnedApplication = async (application: ProjectApplication, approve: boolean) => {
@@ -232,8 +384,7 @@ function App() {
       <a className="brand" href="#top" aria-label="赛伴首页"><span className="brand-mark">S</span><span>赛伴<span className="brand-dot">.</span></span></a>
       <nav className={`nav-links ${mobileMenuOpen ? 'open' : ''}`} aria-label="主导航">
         <a className="active" href="#teams" onClick={() => setMobileMenuOpen(false)}>发现队伍</a>
-        <a href="#workspace" onClick={() => setMobileMenuOpen(false)}>协作工作台</a>
-        <a href="#ledger" onClick={() => setMobileMenuOpen(false)}>我的贡献账本</a>
+        <a href="#applications" onClick={() => setMobileMenuOpen(false)}>我收到的申请</a>
       </nav>
       <div className="top-actions">
         <button className="icon-button mobile-menu" aria-label={mobileMenuOpen ? '关闭菜单' : '打开菜单'} aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen((open) => !open)}>{mobileMenuOpen ? <X size={20} /> : <Menu size={20} />}</button>
@@ -244,11 +395,12 @@ function App() {
 
     <main id="top">
       <section className="hero reveal">
-        <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" />TEAM UP / RECORD EVERYTHING</p><h1>找到一起<br /><em>认真做事</em>的人。</h1><p className="hero-sub">从组队、分工到交付，每一次靠谱的协作都值得被看见。</p><div className="hero-actions"><button className="primary-button" onClick={() => document.getElementById('teams')?.scrollIntoView({ behavior: 'smooth' })}>开始找队友 <ArrowUpRight size={18} /></button><button className="text-button" onClick={() => requireAccount(() => setShowPublish(true))}>我是队长，我要建队 <span>↗</span></button></div></div>
-        <div className="hero-signal"><div className="signal-label"><span className="live-dot" />本周协作信号</div><div className="signal-number">284<span>条</span></div><div className="signal-caption">正在寻找靠谱队友<br />的真实需求</div><div className="signal-stamp">09 / 2026<br />NENU · METALLURGY</div></div>
+        <div className="hero-copy"><p className="eyebrow"><span className="eyebrow-line" />TEAM UP / ALIGN FIRST</p><h1>找到一起<br /><em>认真参赛</em>的人。</h1><p className="hero-sub">把缺口、目标和投入写清楚，再投出一份让队长看得懂的加入申请。</p><div className="hero-actions"><button className="primary-button" onClick={() => document.getElementById('teams')?.scrollIntoView({ behavior: 'smooth' })}>开始找队友 <ArrowUpRight size={18} /></button><button className="text-button" onClick={() => requireAccount(() => setShowPublish(true))}>我是队长，我要建队 <span>↗</span></button></div></div>
+        <div className="hero-signal"><div className="signal-label"><span className="live-dot" />组队前先对齐</div><div className="signal-number">3<span>项</span></div><div className="signal-caption">缺什么人、冲什么目标、
+每周能投入多久</div><div className="signal-stamp">SAIBAN
+TEAM MATCHING</div></div>
       </section>
 
-      <section className="stats-strip reveal"><div><strong>1,248</strong><span>已加入赛伴的同学</span></div><div><strong>{86 + userPosts.length}</strong><span>正在招募的队伍</span></div><div><strong>94%</strong><span>队伍目标一致度</span></div><div className="strip-note">协作不是承诺<br /><b>是留下来的记录。</b></div></section>
 
       <section className="teams-section" id="teams">
         <div className="section-heading reveal"><div><p className="eyebrow">01 / DISCOVER</p><h2>现在，<span>谁在找队友？</span></h2></div><div className="heading-side">每张组队帖都写清楚目标、缺口和投入。<br />先对齐，再一起出发。</div></div>
@@ -257,7 +409,7 @@ function App() {
         <div className="toolbar reveal"><div className="search-box"><Search size={18} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、技能或关键词" aria-label="搜索项目" /></div><div className="filters"><button className={`saved-filter ${showSavedOnly ? 'active' : ''}`} aria-pressed={showSavedOnly} onClick={() => requireAccount(() => setShowSavedOnly((visible) => !visible))}><Heart size={16} fill={showSavedOnly ? 'currentColor' : 'none'} />我的收藏{savedIds.length ? ` ${savedIds.length}` : ''}</button><Filter size={17} /><Select label="竞赛类型" value={category} onChange={setCategory} options={['全部类型', '科创', '仿真', '创意']} /><Select label="目标层级" value={goal} onChange={setGoal} options={['全部目标', '冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /><Select label="时间投入" value={time} onChange={setTime} options={['全部投入', '每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></div></div>
         <div className="content-grid">
           <div className="post-list">{filtered.length ? filtered.map((post, index) => <PostCard key={post.id} post={post} index={index} active={selected?.id === post.id} onClick={() => setSelectedId(post.id)} />) : <div className="empty-state"><Search size={28} /><h3>{showSavedOnly ? '还没有收藏项目' : '没有找到匹配的队伍'}</h3><p>{showSavedOnly ? '点击项目详情右上角的爱心即可收藏。' : '试试换一个技能或目标关键词。'}</p></div>}</div>
-          <aside className="detail-panel reveal" aria-live="polite">{selected ? <><div className={`detail-top ${selected.accent}`}><div className="detail-meta"><span>{selected.category}</span><span>{selected.created}</span></div><button className={`save-button ${savedIds.includes(selected.id) ? 'saved' : ''}`} aria-label={savedIds.includes(selected.id) ? '取消收藏' : '收藏项目'} aria-pressed={savedIds.includes(selected.id)} onClick={() => requireAccount(() => toggleSaved(selected.id))}><Heart size={20} fill={savedIds.includes(selected.id) ? 'currentColor' : 'none'} /></button><h3>{selected.title}</h3><div className="match-line"><Gauge size={16} />你的匹配度 <b>{selected.match}%</b><span className="match-bar"><i style={{ width: `${selected.match}%` }} /></span></div></div><div className="detail-body"><p>{selected.description}</p><div className="detail-facts"><Fact icon={<Users size={17} />} label="队伍规模" value={`${selected.members} 人在队 · 还缺 ${selected.needed} 人`} /><Fact icon={<Clock3 size={17} />} label="时间投入" value={selected.time} /><Fact icon={<CalendarDays size={17} />} label="项目节奏" value="本周开始 · 预计 8 周" /></div><div className="detail-skills"><span>正在寻找</span>{selected.skills.map((skill) => <b key={skill}>{skill}</b>)}</div><button className={`primary-button join-button ${appliedIds.includes(selected.id) ? 'joined' : ''}`} onClick={() => requireAccount(() => toggleApplied(selected.id))}>{appliedIds.includes(selected.id) ? <><Check size={18} />申请已发送</> : <>我对这个队伍感兴趣 <ArrowUpRight size={18} /></>}</button><p className="privacy-note"><ShieldCheck size={14} /> 联系方式仅在双方确认后开放</p></div></> : <div className="empty-detail">选择一张组队帖查看详情</div>}</aside>
+          <aside className="detail-panel reveal" aria-live="polite">{selected ? <><div className={`detail-top ${selected.accent}`}><div className="detail-meta"><span>{selected.category}</span><span>{selected.created}</span></div><button className={`save-button ${savedIds.includes(selected.id) ? 'saved' : ''}`} aria-label={savedIds.includes(selected.id) ? '取消收藏' : '收藏项目'} aria-pressed={savedIds.includes(selected.id)} onClick={() => requireAccount(() => toggleSaved(selected.id))}><Heart size={20} fill={savedIds.includes(selected.id) ? 'currentColor' : 'none'} /></button><h3>{selected.title}</h3></div><div className="detail-body"><p>{selected.description}</p><div className="detail-facts"><Fact icon={<Users size={17} />} label="队伍规模" value={`${selected.members} 人在队 · 还缺 ${selected.needed} 人`} /><Fact icon={<Clock3 size={17} />} label="时间投入" value={selected.time} /><Fact icon={<CalendarDays size={17} />} label="项目节奏" value="本周开始 · 预计 8 周" /></div><div className="detail-skills"><span>正在寻找</span>{selected.skills.map((skill) => <b key={skill}>{skill}</b>)}</div><button className={`primary-button join-button ${appliedIds.includes(selected.id) ? 'joined' : ''}`} onClick={() => requireAccount(() => appliedIds.includes(selected.id) ? void withdrawApplication(selected.id) : (setApplicationForm({ ...emptyApplicationForm, roleTags: selected.skills.slice(0, 3) }), setShowApplication(true)))}>{appliedIds.includes(selected.id) ? <><Check size={18} />已投递，点击撤回</> : <>填写加入申请 <ArrowUpRight size={18} /></>}</button><p className="privacy-note"><ShieldCheck size={14} /> 联系方式仅在双方确认后开放</p></div></> : <div className="empty-detail">选择一张组队帖查看详情</div>}</aside>
         </div>
       </section>
       {showOwnerApplications && session?.user && <section className="teams-section reveal" id="applications">
@@ -270,7 +422,9 @@ function App() {
             <li key={application.id} className="application-row">
               <div>
                 <strong>{application.projectTitle ?? application.projectId}</strong>
-                <p>{application.applicantEmail ?? application.applicantId ?? '申请人'} · {application.status}{application.message ? ` · ${application.message}` : ''}</p>
+                <p>{application.applicant?.displayName || application.applicantId || '申请人'} · {application.availability} · 想加入：{application.roleTags.join('、')}</p>
+                <p>{application.experience}</p>
+                <p>适配理由：{application.fitReason}{application.links.length ? ` · 材料：${application.links.join('、')}` : ''}{application.note ? ` · 补充：${application.note}` : ''}</p>
               </div>
               {application.status === 'pending' && <div className="application-actions">
                 <button type="button" className="primary-button small" onClick={() => void reviewOwnedApplication(application, true)}>通过</button>
@@ -281,29 +435,30 @@ function App() {
         </ul>
       </section>}
 
-      <section className="teams-section reveal" id="workspace">
-        <div className="section-heading"><div><p className="eyebrow">03 / WORKSPACE</p><h2>协作工作台</h2></div><div className="heading-side">任务状态来自接口返回；此处只读展示，不构成法律存证。</div></div>
-        {dataProvider === 'local' ? <p className="privacy-note">本地演示模式没有云端任务。</p> : <>
-          {tasksError && <p className="form-error cloud-error" role="alert">{tasksError}</p>}
-          {!tasksError && !workspaceTasks.length && <p className="privacy-note">当前没有可展示的任务记录。</p>}
-          <ul className="application-list">
-            {workspaceTasks.map((task) => (
-              <li key={task.id} className="application-row">
-                <div>
-                  <strong>{task.title}</strong>
-                  <p>{task.status ?? '未知状态'}{task.description ? ` · ${task.description}` : ''}</p>
-                </div>
-              </li>
+      <section className="teams-section reveal" id="my-teams">
+        <div className="section-heading"><div><p className="eyebrow">02 / MY TEAMS</p><h2>我的队伍</h2></div><div className="heading-side">包含你已参与的所有项目，含已关闭项；成员名单实时取自云端。</div></div>
+        {!isRemoteProvider || dataProvider === 'local' ? <p className="privacy-note">本地演示模式没有云端队伍数据。</p> : !session?.user ? <p className="privacy-note">登录后即可查看你参与的项目。</p> : myProjectsLoading ? <p className="privacy-note">正在加载你的队伍…</p> : !myProjects.length ? <p className="privacy-note">你还没有参与任何项目，先去「发现队伍」加入一个吧。</p> : <>
+          {myTeamError && <p className="form-error cloud-error" role="alert">{myTeamError}</p>}
+          <div className="team-grid">
+            {myProjects.map((project) => (
+              <article key={project.id} className="team-card">
+                <div className="team-card-head"><span className={`team-status ${statusTone(project.status)}`}>{statusLabel(project.status)}</span><span className="team-time">{project.created}</span></div>
+                <h3>{project.title}</h3>
+                <p className="team-meta"><Users size={15} />{project.members}/{project.members + project.needed} 人 · {project.time}</p>
+                <p className="team-meta">{project.owner ? <>队长：{project.owner.displayName || '待补充'} · {project.owner.school || '学校待完善'} {project.owner.major || ''}</> : '队长待补充'}</p>
+                <div className="post-tags">{project.skills.map((skill) => <span key={skill}>{skill}</span>)}</div>
+                <div className="member-list team-members"><h4>成员名单</h4>{(myTeamMembers[project.id as string] ?? []).length ? myTeamMembers[project.id as string].map((member) => <p key={member.userId}>{formatMember(member)}</p>) : <p>成员加载中…</p>}</div>
+              </article>
             ))}
-          </ul>
+          </div>
         </>}
       </section>
 
-      <section className="bottom-callout reveal" id="ledger"><div><p className="eyebrow">04 / CONTRIBUTION</p><h2>我的贡献账本</h2></div><p className="heading-side">这里记录协作进度的只读说明，不是法律意义上的存证。</p></section>
       <section className="bottom-callout reveal"><div><p className="eyebrow">05 / MAKE IT REAL</p><h2>你有一个想法，<br /><i>还差几个靠谱的人。</i></h2></div><button className="primary-button" onClick={() => requireAccount(() => setShowPublish(true))}>发布你的组队需求 <Plus size={18} /></button></section>
     </main>
 
     <AuthModal open={showAuth} onClose={() => setShowAuth(false)} />
+    {showApplication && selected && <div className="modal-backdrop" onMouseDown={() => setShowApplication(false)}><form className="publish-modal" onSubmit={submitApplication} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close-button" onClick={() => setShowApplication(false)} aria-label="关闭"><X size={20} /></button><p className="eyebrow">JOIN APPLICATION / 01</p><h2>用一份简短申请<br /><em>说明你能带来什么。</em></h2><p className="modal-copy">投给「{selected.title}」。只收集队长判断是否适合组队所需的信息。</p><label>想加入的角色或贡献方向 *<input value={applicationForm.roleTags.join('，')} onChange={(event) => setApplicationForm({ ...applicationForm, roleTags: event.target.value.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean).slice(0, 3) })} placeholder="例如：数据分析，答辩材料" maxLength={120} /></label><label>相关经历或可证明能力 *<textarea value={applicationForm.experience} onChange={(event) => setApplicationForm({ ...applicationForm, experience: event.target.value })} placeholder="写清做过什么、产出过什么；60–200 字" rows={4} minLength={60} maxLength={200} /><small>{applicationForm.experience.length}/200</small></label><label>稳定可投入时间 *<Select label="稳定可投入时间" value={applicationForm.availability} onChange={(availability) => setApplicationForm({ ...applicationForm, availability: availability as ApplicationForm['availability'] })} options={['每周 3–5 小时', '每周 5–8 小时', '每周 8 小时以上']} /></label><label>为什么适合这个队 *<textarea value={applicationForm.fitReason} onChange={(event) => setApplicationForm({ ...applicationForm, fitReason: event.target.value })} placeholder="结合这个队伍的目标、缺口或项目阶段；40–120 字" rows={3} minLength={40} maxLength={120} /><small>{applicationForm.fitReason.length}/120</small></label><label>作品或材料链接（选填，最多 2 条）<textarea value={applicationForm.links.join('\n')} onChange={(event) => setApplicationForm({ ...applicationForm, links: event.target.value.split('\n').filter(Boolean).slice(0, 2) })} placeholder="每行一个链接" rows={2} maxLength={400} /></label><label>补充说明（选填）<textarea value={applicationForm.note} onChange={(event) => setApplicationForm({ ...applicationForm, note: event.target.value })} placeholder="例如可参与的具体时段" rows={2} maxLength={120} /></label>{applicationError && <p className="form-error" role="alert">{applicationError}</p>}<button type="submit" className="primary-button">提交加入申请 <ArrowUpRight size={18} /></button></form></div>}
     {showPublish && <div className="modal-backdrop" onMouseDown={() => setShowPublish(false)}><form className="publish-modal" onSubmit={publishPost} onMouseDown={(event) => event.stopPropagation()}><button type="button" className="close-button" onClick={() => setShowPublish(false)} aria-label="关闭"><X size={20} /></button><p className="eyebrow">NEW TEAM / 01</p><h2>把你的缺口<br /><em>说清楚。</em></h2><p className="modal-copy">目标越具体，越容易遇到同频的人。带 * 为必填项。</p><label>项目名称 *<input autoFocus value={form.title} onChange={(event) => setForm({ ...form, title: event.target.value })} placeholder="例如：想组一支认真冲国赛的队伍" maxLength={50} /></label><div className="form-grid"><label>竞赛类型<Select label="竞赛类型" value={form.category} onChange={(value) => setForm({ ...form, category: value })} options={['科创', '仿真', '创意']} /></label><label>目标层级<Select label="目标层级" value={form.goal} onChange={(value) => setForm({ ...form, goal: value })} options={['冲击国赛', '稳定获奖', '冲击省赛', '探索体验']} /></label></div><label>每周投入<Select label="每周投入" value={form.time} onChange={(value) => setForm({ ...form, time: value })} options={['每周 8h+', '每周 5-8h', '每周 5h', '每周 3-5h']} /></label><label>需要的技能 *<input value={form.skills} onChange={(event) => setForm({ ...form, skills: event.target.value })} placeholder="用逗号分隔，例如：Python，建模，答辩" maxLength={80} /></label><label>你正在寻找 *<textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} placeholder="需要什么样的队友？目前做到哪一步？希望如何协作？" rows={4} maxLength={300} /></label>{formError && <p className="form-error" role="alert">{formError}</p>}<button type="submit" className="primary-button">发布组队帖 <ArrowUpRight size={18} /></button></form></div>}
     <footer><span>赛伴 / SAIBAN</span><span>协作即存证 · V0.3 本地交互版</span></footer>
   </div>

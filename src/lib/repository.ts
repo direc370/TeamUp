@@ -7,15 +7,35 @@ import { isSupabaseConfigured, supabase } from './supabase'
 
 export type DataProvider = 'local' | 'supabase' | 'api'
 
+export type ApplicationForm = {
+  roleTags: string[]
+  experience: string
+  availability: '每周 3–5 小时' | '每周 5–8 小时' | '每周 8 小时以上'
+  fitReason: string
+  links: string[]
+  note: string
+}
+
 export type ProjectApplication = {
   id: string
   projectId: string
   projectTitle?: string
   applicantId?: string
-  applicantEmail?: string
-  message?: string
+  applicant?: { displayName: string; school: string; major: string }
+  roleTags: string[]
+  experience: string
+  availability: string
+  fitReason: string
+  links: string[]
+  note: string
   status: 'pending' | 'approved' | 'rejected' | 'withdrawn' | string
   createdAt?: string
+}
+
+export type ProjectMember = {
+  userId: string
+  role: string
+  user: { id: string; displayName: string; school: string; major: string }
 }
 
 export type ProjectTask = {
@@ -24,19 +44,23 @@ export type ProjectTask = {
   title: string
   status?: string
   description?: string
+  assigneeId?: string | null
 }
 
 export interface ProjectRepository {
   readonly provider: DataProvider
   readonly remote: boolean
   listProjects(): Promise<Post[]>
+  listMyProjects(userId: string): Promise<Post[]>
   createProject(user: { id: string }, form: PublishForm): Promise<Post>
   setSaved(userId: string, projectId: string, saved: boolean): Promise<void>
-  setApplication(userId: string, projectId: string, applied: boolean): Promise<void>
+  setApplication(userId: string, projectId: string, form: ApplicationForm | null): Promise<void>
   getUserState(userId: string): Promise<UserProjectState>
   listMyProjectApplications(): Promise<ProjectApplication[]>
   reviewApplication(projectId: string, applicationId: string, approve: boolean): Promise<void>
   listTasks(projectId?: string): Promise<ProjectTask[]>
+  createTask(projectId: string, title: string): Promise<ProjectTask>
+  listMembers(projectId: string): Promise<ProjectMember[]>
   claimTask(taskId: string): Promise<void>
   submitTask(taskId: string): Promise<void>
   acceptTask(taskId: string): Promise<void>
@@ -55,6 +79,8 @@ type ApiProject = {
   memberCount?: number
   skills: string[]
   match?: number
+  status?: string
+  owner?: { id: string; displayName: string; school: string; major: string }
 }
 
 export function mapApiProject(project: ApiProject, created = formatCreated(project.createdAt)): Post {
@@ -72,6 +98,8 @@ export function mapApiProject(project: ApiProject, created = formatCreated(proje
     skills: project.skills,
     // 接口未返回 match 时用占位分，非算法匹配结果
     match: typeof project.match === 'number' ? project.match : 80,
+    status: project.status,
+    owner: project.owner,
     accent: 'lime',
   }
 }
@@ -90,15 +118,18 @@ const localRepository: ProjectRepository = {
   provider: 'local',
   remote: false,
   async listProjects() { return [] },
+  async listMyProjects() { return [] },
   async createProject(_user, form) {
     return { id: Date.now(), title: form.title.trim(), description: form.description.trim(), category: form.category, goal: form.goal, time: form.time, location: '我发布的项目 · 待完善地点', created: '刚刚发布', members: 1, needed: 2, skills: parseSkills(form.skills), match: 100, accent: 'lime' }
   },
-  async setSaved() {},
-  async setApplication() {},
+  async setSaved() { },
+  async setApplication() { },
   async getUserState() { return { savedIds: [], appliedIds: [] } },
   listMyProjectApplications: () => Promise.resolve([]),
   reviewApplication: () => unsupported(),
   listTasks: () => Promise.resolve([]),
+  createTask: () => unsupported(),
+  listMembers: () => unsupported(),
   claimTask: () => unsupported(),
   submitTask: () => unsupported(),
   acceptTask: () => unsupported(),
@@ -110,7 +141,23 @@ const supabaseRepository: ProjectRepository = {
   listProjects: fetchCloudProjects,
   createProject: createCloudProject,
   setSaved: setCloudSaved,
-  setApplication: setCloudApplication,
+  async setApplication(userId, projectId, form) {
+    if (!supabase) throw new Error('Supabase 未配置')
+    const applications = supabase.from('applications') as any
+    const result = form
+      ? await applications.upsert({ applicant_id: userId, project_id: projectId, status: 'pending', role_tags: form.roleTags, experience: form.experience, availability: form.availability, fit_reason: form.fitReason, links: form.links, note: form.note }, { onConflict: 'project_id,applicant_id' })
+      : await applications.update({ status: 'withdrawn' }).eq('applicant_id', userId).eq('project_id', projectId).eq('status', 'pending')
+    if (result.error) throw new Error(result.error.message)
+  },
+  async listMyProjects() {
+    if (!supabase) return []
+    const { data: userData } = await supabase.auth.getUser()
+    const userId = userData.user?.id
+    if (!userId) return []
+    const { error } = await supabase.from('memberships').select('project_id').eq('user_id', userId)
+    if (error) return []
+    return fetchCloudProjects()
+  },
   getUserState: fetchCloudUserState,
   async listMyProjectApplications() {
     if (!supabase) throw new Error('Supabase 未配置')
@@ -124,15 +171,23 @@ const supabaseRepository: ProjectRepository = {
     const { data, error } = await supabase.from('applications').select('*').in('project_id', ids).order('created_at', { ascending: false })
     if (error) throw new Error(error.message)
     const titles = new Map((projects ?? []).map((project) => [project.id, project.title]))
-    return (data ?? []).map((row) => ({
-      id: row.id,
-      projectId: row.project_id,
-      projectTitle: titles.get(row.project_id),
-      applicantId: row.applicant_id,
-      message: row.message,
-      status: row.status,
-      createdAt: row.created_at,
-    }))
+    return (data ?? []).map((item) => {
+      const row = item as any
+      return {
+        id: row.id,
+        projectId: row.project_id,
+        projectTitle: titles.get(row.project_id),
+        applicantId: row.applicant_id,
+        roleTags: row.role_tags ?? [],
+        experience: row.experience ?? '',
+        availability: row.availability ?? '',
+        fitReason: row.fit_reason ?? '',
+        links: row.links ?? [],
+        note: row.note ?? '',
+        status: row.status,
+        createdAt: row.created_at,
+      }
+    })
   },
   async reviewApplication(projectId, applicationId, approve) {
     if (!supabase) throw new Error('Supabase 未配置')
@@ -142,6 +197,8 @@ const supabaseRepository: ProjectRepository = {
     if (error) throw new Error(error.message)
   },
   async listTasks() { return [] },
+  createTask: () => unsupported(),
+  listMembers: () => unsupported(),
   claimTask: () => unsupported(),
   submitTask: () => unsupported(),
   acceptTask: () => unsupported(),
@@ -153,12 +210,18 @@ function apiRepository(baseUrl: string): ProjectRepository {
     provider: 'api',
     remote: true,
     async listProjects() { return (await request<ApiProject[]>('/projects')).map((project) => mapApiProject(project)) },
+    async listMyProjects() { return (await request<ApiProject[]>('/projects/mine')).map((project) => mapApiProject(project)) },
     async createProject(_user, form) {
       const project = await request<ApiProject>('/projects', { method: 'POST', body: JSON.stringify({ title: form.title.trim(), description: form.description.trim(), category: form.category, goal: form.goal, weeklyCommitment: form.time, skills: parseSkills(form.skills) }) })
       return { ...mapApiProject(project, '刚刚发布'), match: 100 }
     },
     async setSaved(_userId, projectId, saved) { await request(`/saved-projects/${encodeURIComponent(projectId)}`, { method: saved ? 'PUT' : 'DELETE' }) },
-    async setApplication(_userId, projectId, applied) { await request(`/applications/${encodeURIComponent(projectId)}`, { method: applied ? 'PUT' : 'DELETE', body: applied ? JSON.stringify({}) : undefined }) },
+    async setApplication(_userId, projectId, form) {
+      await request(`/applications/${encodeURIComponent(projectId)}`, {
+        method: form ? 'PUT' : 'DELETE',
+        body: form ? JSON.stringify(form) : undefined,
+      })
+    },
     async getUserState() {
       const state = await request<{ savedIds: string[]; appliedIds: string[] }>('/user-state')
       return state
@@ -173,6 +236,12 @@ function apiRepository(baseUrl: string): ProjectRepository {
     async listTasks(projectId) {
       const path = projectId ? `/projects/${encodeURIComponent(projectId)}/tasks` : '/tasks'
       return request<ProjectTask[]>(path)
+    },
+    async createTask(projectId, title) {
+      return request<ProjectTask>(`/projects/${encodeURIComponent(projectId)}/tasks`, { method: 'POST', body: JSON.stringify({ title: title.trim() }) })
+    },
+    async listMembers(projectId) {
+      return request<ProjectMember[]>(`/projects/${encodeURIComponent(projectId)}/members`)
     },
     async claimTask(taskId) { await request(`/tasks/${encodeURIComponent(taskId)}/claim`, { method: 'POST' }) },
     async submitTask(taskId) { await request(`/tasks/${encodeURIComponent(taskId)}/submit`, { method: 'POST' }) },

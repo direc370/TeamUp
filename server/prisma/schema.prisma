@@ -110,15 +110,21 @@ model Project {
 }
 
 model Application {
-  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  projectId   String            @map("project_id") @db.Uuid
-  applicantId String            @map("applicant_id") @db.Uuid
-  message     String            @default("") @db.Text
-  status      ApplicationStatus @default(pending)
-  createdAt   DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
-  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  applicant   Profile           @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId    String            @map("project_id") @db.Uuid
+  applicantId  String            @map("applicant_id") @db.Uuid
+  roleTags     String[]          @default([]) @map("role_tags")
+  experience   String            @default("") @db.Text
+  availability String            @default("") @db.Text
+  fitReason    String            @default("") @map("fit_reason") @db.Text
+  links        String[]          @default([])
+  note         String            @default("") @db.Text
+  message      String            @default("") @db.Text
+  status       ApplicationStatus @default(pending)
+  createdAt    DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime          @updatedAt @map("updated_at") @db.Timestamptz(6)
+  project      Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  applicant    Profile           @relation(fields: [applicantId], references: [id], onDelete: Cascade)
 
   @@unique([projectId, applicantId])
   @@map("applications")

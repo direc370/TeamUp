@@ -22,7 +22,9 @@ export class TasksRepository {
   }
 
   create(data: Prisma.TaskUncheckedCreateInput) {
-    return this.prisma.task.create({ data })
+    return this.prisma.task.create({
+      data,
+    })
   }
 
   updateStatus(id: string, status: TaskStatus, assigneeId: string | null) {

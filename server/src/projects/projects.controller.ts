@@ -7,6 +7,9 @@ import { ProjectsService } from './projects.service'
 @Controller('projects')
 export class ProjectsController {
   constructor(private readonly service: ProjectsService) {}
+  @Get('mine') @UseGuards(AuthGuard) findMine(@Req() request: AuthenticatedRequest) {
+    return this.service.findMine(request.user.id)
+  }
   @Get() list() { return this.service.list() }
   @Post() @UseGuards(AuthGuard) create(@Req() request: AuthenticatedRequest, @Body() dto: CreateProjectDto) {
     return this.service.create(request.user.id, dto)

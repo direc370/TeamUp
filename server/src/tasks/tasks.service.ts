@@ -12,7 +12,19 @@ export class TasksService {
     private readonly tasks: TasksRepository,
     private readonly memberships: MembershipsRepository,
     private readonly projects: ProjectsRepository,
-  ) {}
+  ) { }
+
+  async create(userId: string, projectId: string, title: string, dueAt?: string) {
+    const project = await this.projects.findById(projectId)
+    if (!project) throw new NotFoundException('项目不存在')
+    if (project.ownerId !== userId) throw new ForbiddenException('仅队长可以创建任务')
+    return this.tasks.create({ projectId, title: title.trim(), dueAt: dueAt ? new Date(dueAt) : undefined })
+  }
+
+  async members(userId: string, projectId: string) {
+    await this.requireMember(projectId, userId)
+    return this.memberships.listByProject(projectId)
+  }
 
   async list(userId: string, projectId?: string) {
     if (projectId) {

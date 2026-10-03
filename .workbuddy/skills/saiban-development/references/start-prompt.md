@@ -1,14 +1,9 @@
 继续开发本地项目 `D:/大学/赛伴`。
 
-工作要求：
-1. 先读取项目现有代码、Git 状态和 `.workbuddy/memory` 中最新记录，整理已完成与未完成内容，不重建项目、不覆盖已有功能。
-2. 按项目专用 Skill `saiban-development` 执行：把下一阶段拆成可验收任务，一次完成一个最小闭环。
-3. 所有文件仅保存在 `D:/大学/赛伴`；不得操作或上传 `D:/大学` 下的项目书和其他资料。
-4. 每次修改后执行 `npm --prefix "D:/大学/赛伴" run build`；交互功能必须用浏览器完成关键路径验收。
-5. 提交前检查敏感文件。禁止提交 `node_modules`、`dist`、`.env*`、`.workbuddy/memory`、密钥、日志和本机缓存。
-6. 构建与验收通过后创建 Git commit，并普通 push 到已配置的 `origin`。禁止 force push、改写历史或覆盖远端改动；遇到冲突先停止并说明。
-7. 每轮结束汇报：完成内容、关键文件及行号、测试结果、提交哈希、推送结果、下一步。
-
-当前产品路线：赛伴——竞赛组队、团队协作与贡献记录平台。React/Supabase演示、收藏与再次申请、GitHub Pages和NestJS/Prisma骨架已存在，不重复建设。按照2026-09-10计划：P0启动与回归基线→P1独立数据库→P2独立认证→P3真实API联调→P4审批成员→P5试用部署→P6任务→P7贡献。先看实际代码与当轮验收记录，API模式仍使用Supabase会话，不能误认为已经独立上线。
-
-多Agent时总控锁定接口与文件归属，再并行后端、前端、测试；子Agent不提交推送。总控审查实际diff并统一测试后提交，排除output/、个人资料和真实环境配置。外部数据库或部署受阻时继续无依赖任务，但不把Mock通过说成真实联调完成。
+1. 先读 `AGENT.md`、`docs/TASKS.md`、`docs/agent-handoff.md`、`docs/pm-plan-v1.2-senior-feedback.md`，再核验 `git status --short`、HEAD、相关代码和测试。历史文档不能替代真实代码与 Git 状态。
+2. 当前唯一产品方向是：组队前对齐缺口角色、每周投入、目标层级；入队后最多 1–5 条轻量里程碑并可复制到微信。按 P0 组队对齐 → P1 我的队伍只读 → P2 极薄里程碑推进。
+3. 不做法律存证、信用/贡献排行、综测证明、替代微信、陌生人私聊、重型任务看板或提交—验收主流程；不把 Mock 或本地数据说成真实效果。
+4. 先将本轮拆为可验收任务，再做最小闭环。前端通过 `src/lib/repository.ts`，后端保持 NestJS Controller → Service → Repository 和 DTO 校验。不要覆盖已有未提交改动。
+5. 代码改动后运行对应测试与构建：根目录 `npm run test:run`、`npm run build`；服务端 `npm run api:test`、`npm run api:build`。交互功能需要浏览器验证；未跑真实 PostgreSQL、双账号或部署时，明确写“待环境验证”。
+6. 不读真实 `.env`，不自动启动 Docker、运行迁移、部署、购买资源或 push。提交与推送遵循 `AGENT.md`；多 Agent 时加载 `saiban-multiagent`，子 Agent 不提交推送。
+7. 每轮结束更新 `docs/TASKS.md`、`docs/agent-handoff.md` 与当天 `.workbuddy/memory/YYYY-MM-DD.md`；报告范围、实际改动、测试证据、待环境验证、Git 状态和下一步。

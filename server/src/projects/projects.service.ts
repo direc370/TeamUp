@@ -14,6 +14,14 @@ export class ProjectsService {
     })
   }
 
+  async findMine(userId: string) {
+    const rows = await this.repository.listByUser(userId)
+    return rows.map((row) => {
+      const { _count, ...project } = row
+      return { ...project, members: _count.memberships, memberCount: _count.memberships }
+    })
+  }
+
   create(ownerId: string, dto: CreateProjectDto) {
     return this.repository.create({
       ownerId,

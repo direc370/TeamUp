@@ -22,3 +22,31 @@ export function filterPosts(posts: Post[], category: string, goal: string, time:
     return textMatch && (category === '全部类型' || post.category === category) && (goal === '全部目标' || post.goal === goal) && (time === '全部投入' || post.time === time)
   })
 }
+
+/** 「我的队伍」状态徽章的样式色调，缺省按招募中处理 */
+export function statusTone(status: string | undefined): 'open' | 'closed' | 'draft' {
+  if (status === 'closed') return 'closed'
+  if (status === 'draft') return 'draft'
+  return 'open'
+}
+
+/** 「我的队伍」状态徽章的文案 */
+export function statusLabel(status: string | undefined): string {
+  if (status === 'closed') return '已关闭'
+  if (status === 'draft') return '草稿'
+  return '招募中'
+}
+
+export type TeamMember = {
+  userId: string
+  role: string
+  user: { displayName: string; school: string; major: string }
+}
+
+/** 「我的队伍」成员行文案：名字 · 角色 · 学校 专业 */
+export function formatMember(member: TeamMember): string {
+  const name = member.user.displayName || member.userId
+  const school = member.user.school || '学校待完善'
+  const major = member.user.major ? ` ${member.user.major}` : ''
+  return `${name} · ${member.role} · ${school}${major}`
+}

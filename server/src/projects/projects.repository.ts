@@ -10,7 +10,21 @@ export class ProjectsRepository {
     return this.prisma.project.findMany({
       where: { status: 'open' },
       orderBy: { createdAt: 'desc' },
-      include: { _count: { select: { memberships: true } } },
+      include: {
+        _count: { select: { memberships: true } },
+        owner: { select: { id: true, displayName: true, school: true, major: true } },
+      },
+    })
+  }
+
+  listByUser(userId: string) {
+    return this.prisma.project.findMany({
+      where: { memberships: { some: { userId } } },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        _count: { select: { memberships: true } },
+        owner: { select: { id: true, displayName: true, school: true, major: true } },
+      },
     })
   }
 

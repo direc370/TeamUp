@@ -78,6 +78,38 @@
   gap: 12px;
 }
 
+.task-create-row {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0;
+}
+
+.task-create-row input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid rgba(241, 240, 232, 0.18);
+  background: transparent;
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+.member-list {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.member-list h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.member-list p {
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .application-list {
   list-style: none;
   margin: 16px 0 0;
@@ -175,4 +207,77 @@ button:disabled {
   .local-notice {
     align-items: flex-start;
   }
+}
+
+/* 「我的队伍」卡片 */
+.team-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+  margin-top: 22px;
+}
+
+.team-card {
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(241, 240, 232, 0.04), rgba(241, 240, 232, 0.01));
+}
+
+.team-card h3 {
+  margin: 4px 0 8px;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.team-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-status {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 8px;
+  border: 1px solid rgba(241, 240, 232, 0.15);
+  border-radius: 999px;
+}
+
+.team-status.open {
+  color: var(--lime);
+  border-color: rgba(196, 232, 111, 0.4);
+}
+
+.team-status.closed {
+  color: #ff9a8a;
+  border-color: rgba(238, 143, 66, 0.45);
+}
+
+.team-status.draft {
+  color: var(--muted);
+}
+
+.team-time {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.team-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.team-members h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
 }

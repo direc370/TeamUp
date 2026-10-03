@@ -1,12 +1,23 @@
-import { Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common'
 import type { AuthenticatedRequest } from '../auth/authenticated-request'
 import { AuthGuard } from '../auth/auth.guard'
 import { TasksService } from './tasks.service'
+import { CreateTaskDto } from './create-task.dto'
 
 @Controller()
 @UseGuards(AuthGuard)
 export class TasksController {
-  constructor(private readonly service: TasksService) {}
+  constructor(private readonly service: TasksService) { }
+
+  @Post('projects/:projectId/tasks')
+  create(@Req() req: AuthenticatedRequest, @Param('projectId') projectId: string, @Body() dto: CreateTaskDto) {
+    return this.service.create(req.user.id, projectId, dto.title, dto.dueAt)
+  }
+
+  @Get('projects/:projectId/members')
+  members(@Req() req: AuthenticatedRequest, @Param('projectId') projectId: string) {
+    return this.service.members(req.user.id, projectId)
+  }
 
   @Get('tasks')
   listAll(@Req() req: AuthenticatedRequest) {
