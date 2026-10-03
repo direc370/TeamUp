@@ -28,7 +28,7 @@
 
 **代码完成证据**：前端测试和构建、后端测试和构建均通过；迁移文件已审查但未在真实库执行时必须写“待环境验证”。
 
-**最近验证（2026-10-03）**：`npm run test:run` 通过（3 个文件、58 项）；`npm run api:test` 通过（6 个套件、114 项）；`npm run build` 与 `npm run api:build` 通过。以上仅为代码和构建证据；结构化申请迁移尚未在真实 Supabase/PostgreSQL 执行。
+**最近验证（2026-10-03）**：`npm run test:run` 通过（3 个文件、58 项）；`npm run api:test` 通过（6 个套件、114 项）；`npm run build` 与 `npm run api:build` 通过。提交 `c218242` 的 GitHub Pages 工作流已成功构建并发布静态前端。以上仅为代码、构建和静态发布证据；结构化申请迁移尚未在真实 Supabase/PostgreSQL 执行。
 
 ### 暂缓范围（不排期）
 
