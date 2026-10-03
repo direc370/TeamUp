@@ -30,6 +30,8 @@
 
 **最近验证（2026-10-03）**：`npm run test:run` 通过（3 个文件、58 项）；`npm run api:test` 通过（6 个套件、114 项）；`npm run build` 与 `npm run api:build` 通过。提交 `c218242` 的 GitHub Pages 工作流已成功构建并发布静态前端。以上仅为代码、构建和静态发布证据；结构化申请迁移尚未在真实 Supabase/PostgreSQL 执行。
 
+**审核并发保护（2026-10-03）**：审批、拒绝和撤回均限制为从 `pending` 状态转换；通过审批使用可串行化事务，发生 PostgreSQL 序列化冲突时最多重试两次，满员时返回冲突而不写入成员。`npm run api:test` 通过（7 个套件、117 项），`npm run api:build` 通过；真实 PostgreSQL 并发压测仍待环境验证。
+
 ### 暂缓范围（不排期）
 
 - 工作台、任务创建/认领/提交/验收、里程碑、周报复制；

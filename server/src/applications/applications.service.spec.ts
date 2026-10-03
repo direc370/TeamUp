@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common'
 import { ApplicationsService } from './applications.service'
+import { ProjectAtCapacityError } from './applications.repository'
 
 const form = {
   roleTags: ['数据分析'],
@@ -57,10 +58,10 @@ describe('ApplicationsService', () => {
   })
 
   it('仅 pending 可撤回，重复撤回幂等', async () => {
-    const applications = { find: jest.fn().mockResolvedValueOnce({ id: 'app-1', status: 'pending' }).mockResolvedValueOnce({ id: 'app-1', status: 'withdrawn' }), setStatus: jest.fn().mockResolvedValue({ id: 'app-1', status: 'withdrawn' }) }
+    const applications = { find: jest.fn().mockResolvedValueOnce({ id: 'app-1', status: 'pending' }).mockResolvedValueOnce({ id: 'app-1', status: 'withdrawn' }), setPendingStatus: jest.fn().mockResolvedValue({ id: 'app-1', status: 'withdrawn' }) }
     const service = new ApplicationsService(applications as never, {} as never, {} as never)
     await service.withdraw('user-1', 'project-1')
-    expect(applications.setStatus).toHaveBeenCalledWith('app-1', 'withdrawn')
+    expect(applications.setPendingStatus).toHaveBeenCalledWith('app-1', 'withdrawn')
     await expect(service.withdraw('user-1', 'project-1')).resolves.toEqual({ projectId: 'project-1', status: 'withdrawn' })
   })
 
@@ -92,5 +93,17 @@ describe('ApplicationsService', () => {
     const service = new ApplicationsService(applications as never, projects as never, memberships as never)
     await service.decide('owner-1', 'app-1', 'approved')
     expect(applications.approveWithMembership).toHaveBeenCalled()
+  })
+
+  it('项目满员时审批返回冲突', async () => {
+    const application = { id: 'app-1', projectId: 'project-1', applicantId: 'user-1', status: 'pending' }
+    const applications = {
+      findById: jest.fn().mockResolvedValue(application),
+      approveWithMembership: jest.fn().mockRejectedValue(new ProjectAtCapacityError()),
+    }
+    const projects = { findById: jest.fn().mockResolvedValue(project) }
+    const memberships = { find: jest.fn().mockResolvedValue(null) }
+    const service = new ApplicationsService(applications as never, projects as never, memberships as never)
+    await expect(service.decide('owner-1', 'app-1', 'approved')).rejects.toBeInstanceOf(ConflictException)
   })
 })

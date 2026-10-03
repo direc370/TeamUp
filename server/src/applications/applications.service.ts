@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common'
 import { MembershipsRepository } from '../memberships/memberships.repository'
 import { ProjectsRepository } from '../projects/projects.repository'
-import { ApplicationsRepository } from './applications.repository'
+import { ApplicationsRepository, ProjectAtCapacityError } from './applications.repository'
 import { CreateApplicationDto } from './create-application.dto'
 
 @Injectable()
@@ -38,7 +38,7 @@ export class ApplicationsService {
     const current = await this.applications.find(projectId, applicantId)
     if (!current || current.status === 'withdrawn') return { projectId, status: 'withdrawn' as const }
     if (current.status !== 'pending') throw new ConflictException('仅待处理申请可以撤回')
-    return this.applications.setStatus(current.id, 'withdrawn')
+    return this.applications.setPendingStatus(current.id, 'withdrawn')
   }
 
   async listMineAsOwner(ownerId: string) {
@@ -71,17 +71,21 @@ export class ApplicationsService {
     if (project.ownerId !== ownerId) throw new ForbiddenException('仅队长可以审批申请')
     if (application.status === decision) return application
     if (application.status !== 'pending') throw new ConflictException('申请已处理')
-    if (decision === 'rejected') return this.applications.setStatus(application.id, 'rejected')
+    if (decision === 'rejected') return this.applications.setPendingStatus(application.id, 'rejected')
     const existing = await this.memberships.find(application.projectId, application.applicantId)
     if (existing) {
-      return this.applications.setStatus(application.id, 'approved')
+      return this.applications.setPendingStatus(application.id, 'approved')
     }
-    await this.applications.approveWithMembership({
-      applicationId: application.id,
-      projectId: application.projectId,
-      applicantId: application.applicantId,
-      neededMembers: project.neededMembers,
-    })
+    try {
+      await this.applications.approveWithMembership({
+        applicationId: application.id,
+        projectId: application.projectId,
+        applicantId: application.applicantId,
+      })
+    } catch (error) {
+      if (error instanceof ProjectAtCapacityError) throw new ConflictException('项目已满员或关闭招募')
+      throw error
+    }
     return this.applications.findById(application.id)
   }
 }
